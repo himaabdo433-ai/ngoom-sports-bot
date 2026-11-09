@@ -17,7 +17,7 @@ logging.basicConfig(
 log = logging.getLogger("ngoom-bot")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = int(os.getenv("ADMIN_ID", "6809336258"))
+ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "6809336258,6834497894").split(",") if x.strip()}
 PAYMENT_NUMBER = os.getenv("PAYMENT_NUMBER", "01024689530")
 CHANNEL_ID_RAW = os.getenv("CHANNEL_ID", "").strip()
 CHANNEL_ID = int(CHANNEL_ID_RAW) if CHANNEL_ID_RAW else None
@@ -104,7 +104,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         await q.message.reply_text("مفيش اشتراك نشط حاليًا.", reply_markup=home_keyboard())
     elif data.startswith("approve:") or data.startswith("reject:"):
-        if q.from_user.id != ADMIN_ID:
+        if q.from_user.id not in ADMIN_IDS:
             return
         action, raw_id = data.split(":", 1)
         pending_id = int(raw_id)
@@ -163,16 +163,20 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("قبول وتفعيل", callback_data=f"approve:{pending_id}"),
         InlineKeyboardButton("رفض", callback_data=f"reject:{pending_id}")
     ]])
-    if update.effective_message.photo:
-        await context.bot.send_photo(ADMIN_ID, update.effective_message.photo[-1].file_id,
-                                     caption=caption, reply_markup=keyboard)
-    else:
-        await context.bot.send_document(ADMIN_ID, update.effective_message.document.file_id,
-                                        caption=caption, reply_markup=keyboard)
+    for admin_id in ADMIN_IDS:
+        try:
+            if update.effective_message.photo:
+                await context.bot.send_photo(admin_id, update.effective_message.photo[-1].file_id,
+                                             caption=caption, reply_markup=keyboard)
+            else:
+                await context.bot.send_document(admin_id, update.effective_message.document.file_id,
+                                                caption=caption, reply_markup=keyboard)
+        except Exception:
+            log.exception("Could not send receipt to admin %s", admin_id)
     await update.effective_message.reply_text("وصل الإيصال للإدارة للمراجعة. هنبعتلك النتيجة هنا.")
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
         return
     with db() as con:
