@@ -140,7 +140,7 @@ async def build_daily_matches_text():
                           f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر",
                           f"📌 {state}", ""])
     lines.extend(["تابعوا نجوم الرياضة ⭐", "مصدر البيانات: SportScore"])
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 async def daily_channel_publisher(app):
