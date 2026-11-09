@@ -177,6 +177,7 @@ def home_keyboard():
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
+        [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")]
     ])
 
@@ -357,6 +358,107 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.extend(["مصدر البيانات: SportScore", "https://sportscore.com/"])
     await q.message.reply_text("\n".join(lines))
 
+async def begin_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_match_analysis"] = True
+    await update.effective_message.reply_text(
+        "🤖 أهلاً بيك في مساعد نجوم الرياضة!\n"
+        "اكتب اسم المباراة وسؤالك، مثال:\n"
+        "الأهلي والزمالك - هل الفريقان يسجلان؟\n"
+        "أو: ليفربول وأرسنال - هل الركنيات هتكون كتير؟\n\n"
+        "هحلل بالمعلومات المتاحة فقط، ومش هخترع إحصائيات أو نسب."
+    )
+
+
+async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data or not context.user_data.get("awaiting_match_analysis"):
+        return
+    question = (update.effective_message.text or "").strip()
+    if question.lower() in ("إلغاء", "الغاء", "cancel", "خروج"):
+        context.user_data.pop("awaiting_match_analysis", None)
+        await update.effective_message.reply_text("تم إلغاء التحليل. تقدر ترجع من القائمة وقت ما تحب.")
+        return
+
+    context.user_data.pop("awaiting_match_analysis", None)
+    q = question.casefold()
+    if any(word in q for word in ("ركنيات", "ركنية", "corners")):
+        market = "الركنيات"
+        needed = "متوسط ركنيات كل فريق في آخر 5 إلى 10 مباريات، خصوصًا داخل وخارج ملعبه"
+    elif any(word in q for word in ("يسجل", "التسجيل", "هدف", "أهداف", "btts", "الفريقان")):
+        market = "تسجيل الفريقين"
+        needed = "عدد المباريات التي سجل واستقبل فيها كل فريق أهدافًا في آخر 5 إلى 10 مباريات"
+    elif any(word in q for word in ("يفوز", "الفائز", "الفوز", "انتصار")):
+        market = "الفوز"
+        needed = "نتائج آخر المباريات، ترتيب الفريقين، وأداء صاحب الأرض خارج/داخل ملعبه"
+    else:
+        market = "السوق المطلوب"
+        needed = "إحصائيات الأداء والنتائج الأخيرة للفريقين"
+
+    await update.effective_message.reply_text("⏳ بفحص بيانات المباراة المتاحة...")
+    today = datetime.now(ZoneInfo("Africa/Cairo"))
+    try:
+        payload = await fetch_today_fixtures(today.strftime("%Y-%m-%d"))
+        if isinstance(payload, list):
+            matches = payload
+        elif isinstance(payload, dict):
+            matches = payload.get("matches") or payload.get("fixtures") or payload.get("events")
+            if matches is None and isinstance(payload.get("data"), list):
+                matches = payload["data"]
+            elif matches is None and isinstance(payload.get("data"), dict):
+                data = payload["data"]
+                matches = data.get("matches") or data.get("fixtures") or data.get("events")
+        else:
+            matches = None
+    except Exception:
+        log.exception("Match analysis could not load fixtures")
+        matches = None
+
+    found = None
+    if isinstance(matches, list):
+        for item in matches:
+            if not isinstance(item, dict):
+                continue
+            home = _team_label(_pick_match_value(item, "home", "home_team", "homeTeam", "team_home"), "")
+            away = _team_label(_pick_match_value(item, "away", "away_team", "awayTeam", "team_away"), "")
+            competitors = item.get("competitors") or []
+            if (not home or not away) and isinstance(competitors, list):
+                labels = [_team_label(x.get("team") or x, "") for x in competitors if isinstance(x, dict)]
+                if len(labels) >= 2:
+                    home, away = labels[0], labels[1]
+            home_ar = arabic_display_name(home)
+            away_ar = arabic_display_name(away)
+            if home and away and (home.casefold() in q or away.casefold() in q or
+                                  home_ar.casefold() in q or away_ar.casefold() in q):
+                found = (item, home_ar, away_ar)
+                break
+
+    if not found:
+        await update.effective_message.reply_text(
+            "مش قادر أحدد المباراة دي ضمن مباريات النهارده في مصدرنا.\n"
+            "اكتب اسم الفريقين بوضوح وتاريخ المباراة لو مش هتلعب النهارده.\n\n"
+            "ملحوظة: المصدر المجاني الحالي بيعرض جدول المباريات والنتائج، ومش بيوفر سجل إحصائيات تفصيلي لكل الفرق."
+        )
+        return
+
+    item, home, away = found
+    competition = _pick_match_value(item, "competition", "league", "tournament")
+    if isinstance(competition, dict):
+        competition = competition.get("name") or competition.get("title")
+    status = _pick_match_value(item, "status", "state") or "غير محدد"
+    score_h = _pick_match_value(item, "home_score", "homeScore")
+    score_a = _pick_match_value(item, "away_score", "awayScore")
+    score_line = f"النتيجة الحالية: {score_h} - {score_a}\n" if score_h is not None or score_a is not None else ""
+    await update.effective_message.reply_text(
+        f"⚽ تحليل مباراة: {home} × {away}\n"
+        f"🏆 البطولة: {arabic_display_name(competition or 'غير محددة')}\n"
+        f"📌 الحالة: {status}\n{score_line}\n"
+        f"🔎 سؤالك عن: {market}\n\n"
+        "📊 التقييم: البيانات المتاحة حاليًا لا تكفي لإصدار ترشيح موثوق أو نسبة احتمالية. "
+        "مش هقول إن الاختيار قوي من غير أرقام حقيقية.\n\n"
+        f"علشان نقيم السوق ده نحتاج: {needed}.\n"
+        "⚠️ ده مساعد معلوماتي للتسلية والتحليل، مش ضمان لنتيجة أو مكسب."
+    )
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with db() as con:
@@ -391,6 +493,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif data == "matches_today":
         await matches_today(update, context)
+    elif data == "ask_match":
+        await begin_match_analysis(update, context)
     elif data == "daily_gift":
         today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
         with db() as con:
@@ -542,6 +646,7 @@ def main():
     app.add_handler(CommandHandler("setgift", setgift))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
     async def post_init(application):
