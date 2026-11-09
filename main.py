@@ -66,71 +66,137 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg, reply_markup=home_keyboard())
 
 
-async def fetch_league_fixtures(league, date_key):
-    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={date_key}"
-    request = Request(url, headers={"User-Agent": "NogoomSportsBot/1.0", "Accept": "application/json"})
+async def fetch_today_fixtures(date_key):
+    url = f"https://sportscore.com/api/v1/fixtures/?sport=football&date={date_key}&limit=200"
+    request = Request(url, headers={
+        "User-Agent": "NogoomSportsBot/1.0",
+        "Accept": "application/json"
+    })
+
     def load():
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=15) as response:
             return json.loads(response.read().decode("utf-8"))
-    try:
-        return await asyncio.to_thread(load)
-    except Exception:
-        log.exception("Could not fetch fixtures for league %s", league)
-        return None
+
+    return await asyncio.to_thread(load)
+
+
+def _pick_match_value(item, *keys):
+    for key in keys:
+        value = item.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _team_label(value, fallback):
+    if isinstance(value, dict):
+        return (value.get("name") or value.get("displayName")
+                or value.get("shortName") or value.get("team_name") or fallback)
+    if isinstance(value, str):
+        return value
+    return fallback
+
 
 async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer("جاري تحميل مباريات اليوم...")
     today = datetime.now(ZoneInfo("Africa/Cairo"))
-    date_key = today.strftime("%Y%m%d")
-    leagues = [
-        ("eng.1", "الدوري الإنجليزي"),
-        ("esp.1", "الدوري الإسباني"),
-        ("ita.1", "الدوري الإيطالي"),
-        ("ger.1", "الدوري الألماني"),
-        ("fra.1", "الدوري الفرنسي"),
-        ("uefa.champions", "دوري أبطال أوروبا"),
-        ("uefa.europa", "الدوري الأوروبي"),
-    ]
-    results = await asyncio.gather(*(fetch_league_fixtures(code, date_key) for code, _ in leagues))
+    date_key = today.strftime("%Y-%m-%d")
+
+    try:
+        payload = await fetch_today_fixtures(date_key)
+    except Exception:
+        log.exception("Could not fetch today's fixtures from SportScore")
+        await q.message.reply_text("تعذر تحميل المباريات حاليًا. جرّب تاني بعد شوية.")
+        return
+
+    if isinstance(payload, list):
+        matches = payload
+    elif isinstance(payload, dict):
+        matches = payload.get("matches") or payload.get("fixtures") or payload.get("events")
+        if matches is None and isinstance(payload.get("data"), list):
+            matches = payload["data"]
+        elif matches is None and isinstance(payload.get("data"), dict):
+            data = payload["data"]
+            matches = data.get("matches") or data.get("fixtures") or data.get("events")
+    else:
+        matches = None
+
+    if not isinstance(matches, list):
+        log.error("Unexpected SportScore response format: %s", type(payload).__name__)
+        await q.message.reply_text("مصدر المباريات رجّع بيانات غير متوقعة. هنعالج المشكلة.")
+        return
+
     fixtures = []
-    successful_sources = 0
-    for (league_code, league_name), payload in zip(leagues, results):
-        if payload is None:
+    cairo_tz = ZoneInfo("Africa/Cairo")
+    for match in matches:
+        if not isinstance(match, dict):
             continue
-        successful_sources += 1
-        for event in payload.get("events", []):
-            try:
-                competition = (event.get("competitions") or [{}])[0]
-                teams = competition.get("competitors") or []
-                home = next((x for x in teams if x.get("homeAway") == "home"), None)
-                away = next((x for x in teams if x.get("homeAway") == "away"), None)
-                if not home or not away:
+        home_value = _pick_match_value(match, "home", "home_team", "homeTeam", "team_home")
+        away_value = _pick_match_value(match, "away", "away_team", "awayTeam", "team_away")
+        home = _team_label(home_value, "الفريق الأول")
+        away = _team_label(away_value, "الفريق الثاني")
+        if home == "الفريق الأول" or away == "الفريق الثاني":
+            competitors = match.get("competitors") or []
+            for team in competitors:
+                if not isinstance(team, dict):
                     continue
-                kickoff = datetime.fromisoformat(event["date"].replace("Z", "+00:00")).astimezone(ZoneInfo("Africa/Cairo"))
-                state = (competition.get("status") or event.get("status") or {}).get("type", {}).get("state", "")
-                if state == "in":
-                    status_text = f"مباشر | {home.get('score', '0')} - {away.get('score', '0')}"
-                elif state == "post":
-                    status_text = f"انتهت | {home.get('score', '-')} - {away.get('score', '-')}"
-                else:
-                    status_text = "لم تبدأ"
-                fixtures.append((kickoff, league_name, home["team"].get("displayName", "الفريق الأول"),
-                                 away["team"].get("displayName", "الفريق الثاني"), status_text))
-            except (KeyError, TypeError, ValueError):
-                log.exception("Could not parse fixture in %s", league_code)
-    if successful_sources == 0:
-        await q.message.reply_text("تعذر تحميل المباريات حاليًا من مصدر البيانات. جرّب تاني بعد شوية.")
-        return
-    fixtures.sort(key=lambda item: item[0])
+                side = team.get("homeAway") or team.get("side")
+                if side == "home":
+                    home = _team_label(team.get("team") or team, home)
+                elif side == "away":
+                    away = _team_label(team.get("team") or team, away)
+
+        raw_time = _pick_match_value(match, "time", "date", "utcDate", "kickoff", "start_time", "startTime")
+        if isinstance(raw_time, dict):
+            raw_time = raw_time.get("date") or raw_time.get("utc") or raw_time.get("timestamp")
+        if not raw_time:
+            continue
+        try:
+            kickoff = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            kickoff = kickoff.astimezone(cairo_tz)
+        except (TypeError, ValueError):
+            continue
+        if kickoff.date() != today.date():
+            continue
+
+        competition = _pick_match_value(match, "competition", "league", "tournament")
+        if isinstance(competition, dict):
+            competition = competition.get("name") or competition.get("title")
+        competition = competition or "مباريات كرة القدم"
+
+        status = str(_pick_match_value(match, "status", "state") or "").lower()
+        home_score = _pick_match_value(match, "home_score", "homeScore")
+        away_score = _pick_match_value(match, "away_score", "awayScore")
+        status_text = "لم تبدأ"
+        if status in ("live", "in_progress", "in", "playing"):
+            score = f"{home_score if home_score is not None else 0} - {away_score if away_score is not None else 0}"
+            status_text = f"مباشر | {score}"
+        elif status in ("finished", "complete", "completed", "ft", "post"):
+            score = f"{home_score if home_score is not None else '-'} - {away_score if away_score is not None else '-'}"
+            status_text = f"انتهت | {score}"
+        elif home_score is not None or away_score is not None:
+            status_text = f"{home_score or 0} - {away_score or 0}"
+
+        fixtures.append((kickoff, str(competition), home, away, status_text))
+
     if not fixtures:
-        await q.message.reply_text("⚽ مفيش مباريات مسجلة اليوم في البطولات الكبرى.")
+        await q.message.reply_text("⚽ مفيش مباريات مسجلة اليوم في مصدر البيانات.")
         return
+
+    fixtures.sort(key=lambda item: item[0])
     lines = ["⚽ أبرز مباريات اليوم", f"📆 {today.strftime('%d/%m/%Y')}", ""]
-    for kickoff, league_name, home, away, status_text in fixtures[:25]:
-        lines.extend([f"🏆 {league_name}", f"⚽ {home} × {away}",
-                      f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر", f"📌 {status_text}", ""])
-    lines.append("المواعيد والنتائج من ESPN وقد تتغير حسب تحديث المصدر.")
+    for kickoff, competition, home, away, status_text in fixtures[:25]:
+        lines.extend([
+            f"🏆 {competition}",
+            f"⚽ {home} × {away}",
+            f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر",
+            f"📌 {status_text}",
+            ""
+        ])
+    lines.extend(["مصدر البيانات: SportScore", "https://sportscore.com/"])
     await q.message.reply_text("\n".join(lines))
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
