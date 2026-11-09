@@ -47,6 +47,129 @@ def init_db():
             plan TEXT, amount TEXT, created_at TEXT
         )""")
         con.execute("CREATE TABLE IF NOT EXISTS daily_gifts (gift_date TEXT PRIMARY KEY, code TEXT NOT NULL)")
+        con.execute("CREATE TABLE IF NOT EXISTS bot_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        con.execute("CREATE TABLE IF NOT EXISTS daily_posts (post_date TEXT PRIMARY KEY, message_id INTEGER)")
+
+def get_saved_channel_id():
+    if CHANNEL_ID is not None:
+        return CHANNEL_ID
+    with db() as con:
+        row = con.execute("SELECT value FROM bot_settings WHERE key='channel_id'").fetchone()
+    return int(row["value"]) if row else None
+
+
+def save_channel_id(chat_id):
+    with db() as con:
+        con.execute(
+            "INSERT INTO bot_settings(key, value) VALUES('channel_id', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(chat_id),)
+        )
+
+
+async def build_daily_matches_text():
+    today = datetime.now(ZoneInfo("Africa/Cairo"))
+    date_key = today.strftime("%Y-%m-%d")
+    payload = await fetch_today_fixtures(date_key)
+    if isinstance(payload, list):
+        matches = payload
+    elif isinstance(payload, dict):
+        matches = payload.get("matches") or payload.get("fixtures") or payload.get("events")
+        if matches is None and isinstance(payload.get("data"), list):
+            matches = payload["data"]
+        elif matches is None and isinstance(payload.get("data"), dict):
+            data = payload["data"]
+            matches = data.get("matches") or data.get("fixtures") or data.get("events")
+    else:
+        matches = None
+    if not isinstance(matches, list):
+        raise ValueError("Unexpected fixtures response")
+
+    fixtures = []
+    cairo_tz = ZoneInfo("Africa/Cairo")
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        home_value = _pick_match_value(match, "home", "home_team", "homeTeam", "team_home")
+        away_value = _pick_match_value(match, "away", "away_team", "awayTeam", "team_away")
+        home = _team_label(home_value, "الفريق الأول")
+        away = _team_label(away_value, "الفريق الثاني")
+        if home == "الفريق الأول" or away == "الفريق الثاني":
+            for team in (match.get("competitors") or []):
+                if not isinstance(team, dict):
+                    continue
+                side = team.get("homeAway") or team.get("side")
+                if side == "home":
+                    home = _team_label(team.get("team") or team, home)
+                elif side == "away":
+                    away = _team_label(team.get("team") or team, away)
+        raw_time = _pick_match_value(match, "time", "date", "utcDate", "kickoff", "start_time", "startTime")
+        if isinstance(raw_time, dict):
+            raw_time = raw_time.get("date") or raw_time.get("utc") or raw_time.get("timestamp")
+        if not raw_time:
+            continue
+        try:
+            kickoff = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            kickoff = kickoff.astimezone(cairo_tz)
+        except (TypeError, ValueError):
+            continue
+        if kickoff.date() != today.date():
+            continue
+        competition = _pick_match_value(match, "competition", "league", "tournament")
+        if isinstance(competition, dict):
+            competition = competition.get("name") or competition.get("title")
+        status = str(_pick_match_value(match, "status", "state") or "").lower()
+        hs = _pick_match_value(match, "home_score", "homeScore")
+        aws = _pick_match_value(match, "away_score", "awayScore")
+        state = "لم تبدأ"
+        if status in ("live", "in_progress", "in", "playing"):
+            state = f"مباشر | {hs if hs is not None else 0} - {aws if aws is not None else 0}"
+        elif status in ("finished", "complete", "completed", "ft", "post"):
+            state = f"انتهت | {hs if hs is not None else '-'} - {aws if aws is not None else '-'}"
+        fixtures.append((kickoff, str(competition or "مباريات كرة القدم"), home, away, state))
+
+    fixtures.sort(key=lambda item: item[0])
+    lines = ["⚽ أبرز مباريات اليوم", f"📆 {today.strftime('%d/%m/%Y')}", ""]
+    if not fixtures:
+        lines.append("مفيش مباريات مسجلة اليوم في مصدر البيانات.")
+    else:
+        for kickoff, competition, home, away, state in fixtures[:25]:
+            lines.extend([f"🏆 {competition}", f"⚽ {home} × {away}",
+                          f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر",
+                          f"📌 {state}", ""])
+    lines.extend(["تابعوا نجوم الرياضة ⭐", "مصدر البيانات: SportScore"])
+    return "\\n".join(lines)
+
+
+async def daily_channel_publisher(app):
+    cairo = ZoneInfo("Africa/Cairo")
+    while True:
+        now = datetime.now(cairo)
+        next_run = now.replace(hour=10, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        await asyncio.sleep(max(1, (next_run - now).total_seconds()))
+        channel_id = get_saved_channel_id()
+        if not channel_id:
+            log.warning("Daily publisher: channel ID not detected yet; waiting for a channel post.")
+            continue
+        post_date = datetime.now(cairo).date().isoformat()
+        with db() as con:
+            already_posted = con.execute("SELECT 1 FROM daily_posts WHERE post_date=?", (post_date,)).fetchone()
+        if already_posted:
+            continue
+        try:
+            message = await build_daily_matches_text()
+            sent = await app.bot.send_message(chat_id=channel_id, text=message)
+            with db() as con:
+                con.execute("INSERT OR REPLACE INTO daily_posts(post_date, message_id) VALUES(?, ?)",
+                            (post_date, sent.message_id))
+            log.info("Daily fixtures posted to channel %s for %s", channel_id, post_date)
+        except Exception:
+            log.exception("Daily fixtures post failed for channel %s", channel_id)
+
 
 def home_keyboard():
     return InlineKeyboardMarkup([
@@ -357,7 +480,10 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = update.channel_post
     if not post:
         return
-    if CHANNEL_ID is not None and post.chat_id != CHANNEL_ID:
+    if CHANNEL_ID is None and get_saved_channel_id() is None:
+        save_channel_id(post.chat_id)
+        log.info("Detected and saved target channel ID: %s", post.chat_id)
+    if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
         return
     try:
         chosen = random.sample(REACTIONS, k=random.randint(1, 3))
@@ -383,6 +509,9 @@ def main():
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
+    async def post_init(application):
+        application.create_task(daily_channel_publisher(application))
+    app.post_init = post_init
     log.info("Nogoom Sports bot is starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
