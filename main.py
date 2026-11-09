@@ -3,6 +3,7 @@ import sqlite3
 import random
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
 from telegram.ext import (
@@ -42,12 +43,14 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
             plan TEXT, amount TEXT, created_at TEXT
         )""")
+        con.execute("CREATE TABLE IF NOT EXISTS daily_gifts (gift_date TEXT PRIMARY KEY, code TEXT NOT NULL)")
 
 def home_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("اشتراك أسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
-        [InlineKeyboardButton("حالة اشتراكي", callback_data="status")]
+        [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
+        [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")]
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,6 +93,14 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}\n"
             "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة."
         )
+    elif data == "daily_gift":
+        today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
+        with db() as con:
+            row = con.execute("SELECT code FROM daily_gifts WHERE gift_date=?", (today,)).fetchone()
+        if row:
+            await q.message.reply_text("🎁 كود هديتك اليومية:\n" + row["code"])
+        else:
+            await q.message.reply_text("🎁 مفيش كود هدية متاح النهارده، تابعنا قريبًا.")
     elif data == "status":
         user_id = q.from_user.id
         with db() as con:
@@ -175,6 +186,19 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log.exception("Could not send receipt to admin %s", admin_id)
     await update.effective_message.reply_text("وصل الإيصال للإدارة للمراجعة. هنبعتلك النتيجة هنا.")
 
+async def setgift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    if not context.args:
+        await update.effective_message.reply_text("استخدم الأمر كده:\n/setgift CODE")
+        return
+    code = " ".join(context.args).strip()
+    today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
+    with db() as con:
+        con.execute("INSERT INTO daily_gifts(gift_date, code) VALUES(?, ?) ON CONFLICT(gift_date) DO UPDATE SET code=excluded.code", (today, code))
+    await update.effective_message.reply_text("تم ضبط هدية النهارده بنجاح 🎁")
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
@@ -214,6 +238,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("setgift", setgift))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
