@@ -510,7 +510,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
     async def post_init(application):
-        application.create_task(daily_channel_publisher(application))
+        application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
     app.post_init = post_init
     log.info("Nogoom Sports bot is starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
