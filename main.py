@@ -92,17 +92,17 @@ async def build_daily_matches_text():
             continue
         home_value = _pick_match_value(match, "home", "home_team", "homeTeam", "team_home")
         away_value = _pick_match_value(match, "away", "away_team", "awayTeam", "team_away")
-        home = _team_label(home_value, "الفريق الأول")
-        away = _team_label(away_value, "الفريق الثاني")
+        home = arabic_display_name(_team_label(home_value, "الفريق الأول"))
+        away = arabic_display_name(_team_label(away_value, "الفريق الثاني"))
         if home == "الفريق الأول" or away == "الفريق الثاني":
             for team in (match.get("competitors") or []):
                 if not isinstance(team, dict):
                     continue
                 side = team.get("homeAway") or team.get("side")
                 if side == "home":
-                    home = _team_label(team.get("team") or team, home)
+                    home = arabic_display_name(_team_label(team.get("team") or team, home))
                 elif side == "away":
-                    away = _team_label(team.get("team") or team, away)
+                    away = arabic_display_name(_team_label(team.get("team") or team, away))
         raw_time = _pick_match_value(match, "time", "date", "utcDate", "kickoff", "start_time", "startTime")
         if isinstance(raw_time, dict):
             raw_time = raw_time.get("date") or raw_time.get("utc") or raw_time.get("timestamp")
@@ -219,6 +219,41 @@ def _team_label(value, fallback):
         return value
     return fallback
 
+# Arabic display names for commonly covered clubs and competitions.
+ARABIC_NAMES = {
+    "real madrid": "ريال مدريد", "barcelona": "برشلونة", "atletico madrid": "أتلتيكو مدريد",
+    "manchester city": "مانشستر سيتي", "manchester united": "مانشستر يونايتد",
+    "liverpool": "ليفربول", "arsenal": "أرسنال", "chelsea": "تشيلسي",
+    "tottenham": "توتنهام", "tottenham hotspur": "توتنهام", "newcastle united": "نيوكاسل يونايتد",
+    "bayern munich": "بايرن ميونخ", "borussia dortmund": "بوروسيا دورتموند",
+    "bayer leverkusen": "باير ليفركوزن", "rb leipzig": "لايبزيج", "paris saint germain": "باريس سان جيرمان",
+    "paris saint-germain": "باريس سان جيرمان", "psg": "باريس سان جيرمان", "marseille": "مارسيليا",
+    "inter": "إنتر ميلان", "inter milan": "إنتر ميلان", "ac milan": "إيه سي ميلان",
+    "juventus": "يوفنتوس", "napoli": "نابولي", "roma": "روما", "lazio": "لاتسيو",
+    "ajax": "أياكس", "benfica": "بنفيكا", "porto": "بورتو", "sporting cp": "سبورتنج لشبونة",
+    "al ahly": "الأهلي", "al-ahly": "الأهلي", "zamalek": "الزمالك", "pyramids": "بيراميدز",
+    "ismaily": "الإسماعيلي", "ceramica cleopatra": "سيراميكا كليوباترا",
+    "al hilal": "الهلال", "al-hilal": "الهلال", "al nassr": "النصر", "al-nassr": "النصر",
+    "al ittihad": "الاتحاد", "al-ittihad": "الاتحاد", "al ahli": "الأهلي السعودي",
+    "aston villa": "أستون فيلا", "west ham": "وست هام", "brighton": "برايتون",
+    "everton": "إيفرتون", "fulham": "فولهام", "crystal palace": "كريستال بالاس",
+    "nottingham forest": "نوتنجهام فورست", "wolves": "وولفرهامبتون", "wolverhampton wanderers": "وولفرهامبتون",
+    "premier league": "الدوري الإنجليزي الممتاز", "english premier league": "الدوري الإنجليزي الممتاز",
+    "la liga": "الدوري الإسباني", "laliga": "الدوري الإسباني", "bundesliga": "الدوري الألماني",
+    "serie a": "الدوري الإيطالي", "ligue 1": "الدوري الفرنسي", "uefa champions league": "دوري أبطال أوروبا",
+    "champions league": "دوري أبطال أوروبا", "uefa europa league": "الدوري الأوروبي",
+    "europa league": "الدوري الأوروبي", "egyptian premier league": "الدوري المصري الممتاز",
+    "egypt premier league": "الدوري المصري الممتاز", "saudi pro league": "دوري روشن السعودي",
+    "afc champions league": "دوري أبطال آسيا", "fa cup": "كأس الاتحاد الإنجليزي",
+    "carabao cup": "كأس الرابطة الإنجليزية", "copa del rey": "كأس ملك إسبانيا",
+}
+
+def arabic_display_name(value):
+    if not value:
+        return value
+    clean = " ".join(str(value).strip().split())
+    return ARABIC_NAMES.get(clean.casefold(), clean)
+
 
 async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -257,8 +292,8 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
         home_value = _pick_match_value(match, "home", "home_team", "homeTeam", "team_home")
         away_value = _pick_match_value(match, "away", "away_team", "awayTeam", "team_away")
-        home = _team_label(home_value, "الفريق الأول")
-        away = _team_label(away_value, "الفريق الثاني")
+        home = arabic_display_name(_team_label(home_value, "الفريق الأول"))
+        away = arabic_display_name(_team_label(away_value, "الفريق الثاني"))
         if home == "الفريق الأول" or away == "الفريق الثاني":
             competitors = match.get("competitors") or []
             for team in competitors:
@@ -266,9 +301,9 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
                 side = team.get("homeAway") or team.get("side")
                 if side == "home":
-                    home = _team_label(team.get("team") or team, home)
+                    home = arabic_display_name(_team_label(team.get("team") or team, home))
                 elif side == "away":
-                    away = _team_label(team.get("team") or team, away)
+                    away = arabic_display_name(_team_label(team.get("team") or team, away))
 
         raw_time = _pick_match_value(match, "time", "date", "utcDate", "kickoff", "start_time", "startTime")
         if isinstance(raw_time, dict):
@@ -288,7 +323,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         competition = _pick_match_value(match, "competition", "league", "tournament")
         if isinstance(competition, dict):
             competition = competition.get("name") or competition.get("title")
-        competition = competition or "مباريات كرة القدم"
+        competition = arabic_display_name(competition or "مباريات كرة القدم")
 
         status = str(_pick_match_value(match, "status", "state") or "").lower()
         home_score = _pick_match_value(match, "home_score", "homeScore")
