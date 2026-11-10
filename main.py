@@ -573,7 +573,7 @@ async def send_capital_plan(query, context, mode):
         "دي حاسبة لتنظيم حد الخسارة وليست توصية بالمراهنة أو ضمانًا للمكسب. لا تعتمد على التوقعات كمصدر دخل."
     ])
     context.user_data.pop("capital_amount", None)
-    await query.message.reply_text("\\n".join(lines))
+    await query.message.reply_text("\n".join(lines))
 
 
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
