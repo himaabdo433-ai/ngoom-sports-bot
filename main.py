@@ -178,6 +178,7 @@ def home_keyboard():
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
+        [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")]
     ])
 
@@ -487,7 +488,73 @@ async def begin_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+async def begin_capital_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_capital_amount"] = True
+    context.user_data.pop("awaiting_match_analysis", None)
+    await update.effective_message.reply_text(
+        "💰 إدارة رأس المال الذكية\n"
+        "اكتب إجمالي المبلغ المخصص للترفيه/المراهنة بالجنيه، مثال: 1000\n"
+        "هنحسب حدًا يوميًا صغيرًا للمخاطرة ونقسمه على 3 مباريات كحد أقصى، "
+        "ونوضح لك المبلغ اللي يفضل احتياطيًا.\n"
+        "اكتب (إلغاء) للرجوع."
+    )
+
+
+def _parse_capital_amount(raw):
+    arabic_digits = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    value = (raw or "").translate(arabic_digits).replace(",", "").replace("٬", "").strip()
+    if not value.isdigit():
+        return None
+    amount = int(value)
+    if amount < 100 or amount > 10000000:
+        return None
+    return amount
+
+
+async def handle_capital_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = (update.effective_message.text or "").strip()
+    context.user_data.pop("awaiting_capital_amount", None)
+    if raw.casefold() in ("إلغاء", "الغاء", "cancel", "خروج"):
+        await update.effective_message.reply_text("تم إلغاء إدارة رأس المال.")
+        return
+    amount = _parse_capital_amount(raw)
+    if amount is None:
+        context.user_data["awaiting_capital_amount"] = True
+        await update.effective_message.reply_text(
+            "اكتب مبلغًا صحيحًا بالجنيه من 100 إلى 10,000,000، مثال: 1000. أو اكتب (إلغاء)."
+        )
+        return
+
+    daily_cap = max(1, round(amount * 0.02))
+    match_count = 3 if daily_cap >= 15 else (2 if daily_cap >= 6 else 1)
+    base, remainder = divmod(daily_cap, match_count)
+    stakes = [base + (1 if i < remainder else 0) for i in range(match_count)]
+    reserve = amount - daily_cap
+    lines = [
+        "💰 خطة إدارة رأس المال",
+        f"💵 رأس المال المدخل: {amount:,} جنيه",
+        "🛡️ الحد الأقصى المقترح للمخاطرة اليوم: 2% فقط",
+        f"🎯 إجمالي المبلغ المخصص اليوم: {daily_cap:,} جنيه",
+        "",
+        "تقسيم متساوٍ على مباريات تختارها أنت:",
+    ]
+    for i, stake in enumerate(stakes, 1):
+        lines.append(f"• المباراة {i}: {stake:,} جنيه")
+    lines.extend([
+        "",
+        f"🏦 المبلغ الاحتياطي غير المستخدم: {reserve:,} جنيه",
+        "📌 لو مفيش اختيارات مناسبة، عادي جدًا ما تراهنش وخلي المبلغ كله احتياطي.",
+        "⛔ ممنوع تعويض الخسارة بزيادة الرهان أو استخدام فلوس الالتزامات.",
+        "",
+        "دي حاسبة ميزانية وليست ترشيحات مباريات أو ضمان مكسب. لا نملك بيانات odds كافية لتحديد قيمة رهان مربح."
+    ])
+    await update.effective_message.reply_text("\\n".join(lines))
+
+
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data and context.user_data.get("awaiting_capital_amount"):
+        await handle_capital_plan(update, context)
+        return
     if not context.user_data or not context.user_data.get("awaiting_match_analysis"):
         return
     question = (update.effective_message.text or "").strip()
@@ -626,6 +693,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await matches_today(update, context)
     elif data == "ask_match":
         await begin_match_analysis(update, context)
+    elif data == "capital_manager":
+        await begin_capital_manager(update, context)
     elif data == "daily_gift":
         today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
         with db() as con:
