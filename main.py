@@ -219,9 +219,9 @@ def _xml_text(element, names):
 
 def _clean_news_text(value, limit=320):
     value = html.unescape(str(value or ""))
-    value = re.sub(r"<(script|style)[^>]*>.*?</\\1>", " ", value, flags=re.I | re.S)
+    value = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", value, flags=re.I | re.S)
     value = re.sub(r"<[^>]+>", " ", value)
-    value = re.sub(r"\\s+", " ", value).strip()
+    value = re.sub(r"\s+", " ", value).strip()
     if len(value) > limit:
         value = value[:limit].rsplit(" ", 1)[0].rstrip(" .،؛") + "…"
     return value
@@ -305,9 +305,9 @@ async def publish_football_news(app):
         lines.append(f"المصدر: {item['source']}")
         lines.append(item["link"])
         lines.append("")
-    message = "\\n".join(lines).strip()
+    message = "\n".join(lines).strip()
     if len(message) > 3900:
-        message = message[:3850].rsplit("\\n", 1)[0] + "\\n…"
+        message = message[:3850].rsplit("\n", 1)[0] + "\n…"
     try:
         sent = await app.bot.send_message(chat_id=channel_id, text=message, disable_web_page_preview=True)
         log.info("Posted %s important football news items as channel message %s", len(important), sent.message_id)
@@ -837,7 +837,7 @@ async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TY
         "⚠️ التحليل مبني على نتائج مسجلة فقط، ولا يشمل الغيابات أو التشكيل أو إحصائيات الركنيات. "
         "العينة قصيرة ولا تضمن نتيجة أو مكسب."
     ])
-    await update.effective_message.reply_text("\\n".join(lines))
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 
