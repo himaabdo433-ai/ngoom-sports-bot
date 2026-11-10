@@ -825,6 +825,45 @@ def _grade_prediction(market, choice, score):
     return "correct" if choice == actual else "wrong"
 
 
+async def update_pending_predictions():
+    with db() as con:
+        dates = [row["match_date"] for row in con.execute(
+            "SELECT DISTINCT match_date FROM predictions WHERE status='pending'").fetchall()]
+    if not dates:
+        return
+    payloads = await asyncio.gather(*(fetch_today_fixtures(day) for day in dates), return_exceptions=True)
+    with db() as con:
+        for day, payload in zip(dates, payloads):
+            if isinstance(payload, Exception):
+                log.warning("Prediction updater could not load fixtures for %s", day)
+                continue
+            fixtures = _extract_fixtures(payload)
+            pending = con.execute("SELECT * FROM predictions WHERE match_date=? AND status='pending'",
+                                  (day,)).fetchall()
+            for row in pending:
+                for fixture in fixtures:
+                    if not isinstance(fixture, dict):
+                        continue
+                    home, away = _fixture_teams(fixture)
+                    if home.casefold() != row["home_team"].casefold() or away.casefold() != row["away_team"].casefold():
+                        continue
+                    score = _finished_score(fixture)
+                    if score is not None:
+                        outcome = _grade_prediction(row["market"], row["choice"], score)
+                        con.execute("UPDATE predictions SET status=?, result=? WHERE id=?",
+                                    (outcome, f"{score[0]}-{score[1]}", row["id"]))
+                    break
+
+
+async def prediction_result_updater(app):
+    while True:
+        try:
+            await update_pending_predictions()
+        except Exception:
+            log.exception("Automatic prediction result update failed")
+        await asyncio.sleep(600)
+
+
 async def show_prediction_history(query, context):
     user_id = query.from_user.id
     with db() as con:
@@ -1068,6 +1107,7 @@ def main():
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
     async def post_init(application):
         application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
+        application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
     app.post_init = post_init
     log.info("Nogoom Sports bot is starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
