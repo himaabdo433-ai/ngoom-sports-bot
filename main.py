@@ -1222,6 +1222,22 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"لوحة الإدارة ⭐\nطلبات قيد المراجعة: {pending_count}\nاشتراكات نشطة: {active_count}"
     )
 
+
+async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user or user.id not in ADMIN_IDS:
+        return
+    origin = getattr(message, "forward_origin", None)
+    channel = getattr(origin, "chat", None) if origin else None
+    if not channel or getattr(origin, "type", None) != "channel":
+        await message.reply_text("ابعتلي رسالة مُعاد توجيهها من القناة نفسها، مش صورة أو نص منسوخ.")
+        return
+    save_channel_id(channel.id)
+    log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
+    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ متابعة الأخبار الجديدة كل 4 ساعات.")
+    asyncio.create_task(publish_football_news(context.application))
+
 async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = update.channel_post
     if not post:
@@ -1257,6 +1273,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
+    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, capture_forwarded_channel))
     async def post_init(application):
         application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
         application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
