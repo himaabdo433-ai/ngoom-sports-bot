@@ -49,6 +49,14 @@ def init_db():
         con.execute("CREATE TABLE IF NOT EXISTS daily_gifts (gift_date TEXT PRIMARY KEY, code TEXT NOT NULL)")
         con.execute("CREATE TABLE IF NOT EXISTS bot_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         con.execute("CREATE TABLE IF NOT EXISTS daily_posts (post_date TEXT PRIMARY KEY, message_id INTEGER)")
+        con.execute("""CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            match_date TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL,
+            competition TEXT, kickoff TEXT, market TEXT NOT NULL, choice TEXT NOT NULL,
+            created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', result TEXT
+        )""")
+        con.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_unique
+            ON predictions(user_id, match_date, home_team, away_team, market)""")
 
 def get_saved_channel_id():
     if CHANNEL_ID is not None:
@@ -178,6 +186,7 @@ def home_keyboard():
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
+        [InlineKeyboardButton("🎯 سجل توقعاتك", callback_data="predictions")],
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")]
     ])
@@ -698,6 +707,177 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await update.effective_message.reply_text("مفيش اشتراك نشط على حسابك حاليًا.", reply_markup=home_keyboard())
 
+async def begin_predictions(query, context):
+    today = datetime.now(ZoneInfo("Africa/Cairo"))
+    date_key = today.date().isoformat()
+    try:
+        matches = _extract_fixtures(await fetch_today_fixtures(date_key))
+    except Exception:
+        log.exception("Could not load fixtures for predictions")
+        await query.message.reply_text("تعذر تحميل مباريات اليوم حاليًا. جرّب بعد شوية.")
+        return
+    options = []
+    for item in matches:
+        if not isinstance(item, dict):
+            continue
+        home, away = _fixture_teams(item)
+        if not home or not away:
+            continue
+        raw_time = _pick_match_value(item, "time", "date", "utcDate", "kickoff", "start_time", "startTime")
+        if isinstance(raw_time, dict):
+            raw_time = raw_time.get("date") or raw_time.get("utc") or raw_time.get("timestamp")
+        if not raw_time:
+            continue
+        try:
+            kickoff = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            kickoff = kickoff.astimezone(ZoneInfo("Africa/Cairo"))
+        except (TypeError, ValueError):
+            continue
+        status = str(_pick_match_value(item, "status", "state") or "").casefold()
+        if kickoff <= today or status in ("live", "in_progress", "in", "playing", "finished", "complete", "completed", "ft", "post", "ended"):
+            continue
+        competition = _pick_match_value(item, "competition", "league", "tournament")
+        if isinstance(competition, dict):
+            competition = competition.get("name") or competition.get("title")
+        options.append({"date": date_key, "home": home, "away": away,
+                        "competition": str(competition or "كرة القدم"), "kickoff": kickoff.isoformat()})
+    options.sort(key=lambda x: x["kickoff"])
+    options = options[:10]
+    if not options:
+        await query.message.reply_text("مفيش مباريات قادمة متاحة للتوقع اليوم. جرّب وقت تاني.")
+        return
+    context.user_data["prediction_matches"] = options
+    rows = [[InlineKeyboardButton(
+        f'{arabic_display_name(item["home"])} × {arabic_display_name(item["away"])}'[:60],
+        callback_data=f"pred_match:{idx}"
+    )] for idx, item in enumerate(options)]
+    rows.append([InlineKeyboardButton("📒 عرض سجل توقعاتي", callback_data="pred_history")])
+    await query.message.reply_text("🎯 اختار مباراة لسه ما بدأتش:", reply_markup=InlineKeyboardMarkup(rows))
+
+
+async def show_prediction_markets(query, context, index):
+    matches = context.user_data.get("prediction_matches") or []
+    if index < 0 or index >= len(matches):
+        await query.message.reply_text("قائمة المباريات انتهت. افتح سجل التوقعات من جديد.")
+        return
+    context.user_data["current_prediction_match"] = matches[index]
+    match = matches[index]
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 نتيجة المباراة", callback_data="pred_market:result")],
+        [InlineKeyboardButton("⚽ الفريقان يسجلان", callback_data="pred_market:btts")],
+        [InlineKeyboardButton("🥅 أكثر من 2.5 هدف", callback_data="pred_market:over25")],
+    ])
+    await query.message.reply_text(
+        f'المباراة: {arabic_display_name(match["home"])} × {arabic_display_name(match["away"])}\nاختار نوع التوقع:',
+        reply_markup=keyboard)
+
+
+async def show_prediction_choices(query, context, market):
+    match = context.user_data.get("current_prediction_match")
+    if not match or market not in ("result", "btts", "over25"):
+        await query.message.reply_text("اختار المباراة من جديد.")
+        return
+    context.user_data["current_prediction_market"] = market
+    home, away = arabic_display_name(match["home"]), arabic_display_name(match["away"])
+    if market == "result":
+        buttons = [[InlineKeyboardButton(f"فوز {home}", callback_data="pred_pick:1")],
+                   [InlineKeyboardButton("تعادل", callback_data="pred_pick:X")],
+                   [InlineKeyboardButton(f"فوز {away}", callback_data="pred_pick:2")]]
+    else:
+        buttons = [[InlineKeyboardButton("نعم", callback_data="pred_pick:yes"),
+                    InlineKeyboardButton("لا", callback_data="pred_pick:no")]]
+    await query.message.reply_text("اختار توقعك:", reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def save_prediction(query, context, choice):
+    match = context.user_data.get("current_prediction_match")
+    market = context.user_data.get("current_prediction_market")
+    if not match or market not in ("result", "btts", "over25"):
+        await query.message.reply_text("ابدأ من جديد واختار المباراة ونوع التوقع.")
+        return
+    with db() as con:
+        con.execute("""INSERT OR IGNORE INTO predictions
+            (user_id, match_date, home_team, away_team, competition, kickoff, market, choice, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (query.from_user.id, match["date"], match["home"], match["away"],
+             match["competition"], match["kickoff"], market, choice, datetime.now(timezone.utc).isoformat()))
+        row = con.execute("""SELECT id FROM predictions
+            WHERE user_id=? AND match_date=? AND home_team=? AND away_team=? AND market=?""",
+            (query.from_user.id, match["date"], match["home"], match["away"], market)).fetchone()
+    context.user_data.pop("current_prediction_match", None)
+    context.user_data.pop("current_prediction_market", None)
+    await query.message.reply_text("✅ توقعك اتسجل! هنراجع النتيجة بعد نهاية المباراة." if row else "تعذر حفظ التوقع. جرّب تاني.")
+
+
+def _grade_prediction(market, choice, score):
+    hs, aws = score
+    if market == "result":
+        actual = "1" if hs > aws else ("2" if hs < aws else "X")
+        return "correct" if choice == actual else "wrong"
+    if market == "btts":
+        actual = "yes" if hs > 0 and aws > 0 else "no"
+    elif market == "over25":
+        actual = "yes" if hs + aws >= 3 else "no"
+    else:
+        return "pending"
+    return "correct" if choice == actual else "wrong"
+
+
+async def show_prediction_history(query, context):
+    user_id = query.from_user.id
+    with db() as con:
+        rows = con.execute("SELECT * FROM predictions WHERE user_id=? ORDER BY id DESC LIMIT 30",
+                           (user_id,)).fetchall()
+    if not rows:
+        await query.message.reply_text("لسه معندكش توقعات مسجلة. اضغط 🎯 سجل توقعاتك وابدأ.")
+        return
+    dates = sorted({row["match_date"] for row in rows if row["status"] == "pending"})
+    payloads = await asyncio.gather(*(fetch_today_fixtures(day) for day in dates), return_exceptions=True)
+    by_date = {}
+    for day, payload in zip(dates, payloads):
+        if not isinstance(payload, Exception):
+            by_date[day] = _extract_fixtures(payload)
+    with db() as con:
+        for row in rows:
+            if row["status"] != "pending":
+                continue
+            for fixture in by_date.get(row["match_date"], []):
+                if not isinstance(fixture, dict):
+                    continue
+                home, away = _fixture_teams(fixture)
+                if home.casefold() != row["home_team"].casefold() or away.casefold() != row["away_team"].casefold():
+                    continue
+                score = _finished_score(fixture)
+                if score is not None:
+                    outcome = _grade_prediction(row["market"], row["choice"], score)
+                    con.execute("UPDATE predictions SET status=?, result=? WHERE id=?",
+                                (outcome, f"{score[0]}-{score[1]}", row["id"]))
+                break
+        rows = con.execute("SELECT * FROM predictions WHERE user_id=? ORDER BY id DESC LIMIT 30",
+                           (user_id,)).fetchall()
+    correct = sum(row["status"] == "correct" for row in rows)
+    wrong = sum(row["status"] == "wrong" for row in rows)
+    settled = correct + wrong
+    rate = round(correct * 100 / settled) if settled else 0
+    lines = ["📒 سجل توقعاتك", f"✅ صحيحة: {correct} | ❌ خاطئة: {wrong}",
+             f"📊 نسبة النجاح: {rate}% ({settled} توقع محسوم)", ""]
+    labels = {"result": "نتيجة المباراة", "btts": "الفريقان يسجلان", "over25": "أكثر من 2.5 هدف"}
+    for row in rows[:12]:
+        home, away = arabic_display_name(row["home_team"]), arabic_display_name(row["away_team"])
+        choice = row["choice"]
+        if row["market"] == "result":
+            choice = {"1": f"فوز {home}", "X": "تعادل", "2": f"فوز {away}"}.get(choice, choice)
+        else:
+            choice = "نعم" if choice == "yes" else "لا"
+        status = {"pending": "⏳ لم تُحسم", "correct": "✅ صح", "wrong": "❌ غلط"}.get(row["status"], row["status"])
+        score = f' | النتيجة {row["result"]}' if row["result"] else ""
+        lines.append(f'• {home} × {away}\n  {labels.get(row["market"], row["market"])}: {choice}\n  {status}{score}')
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎯 سجل توقع جديد", callback_data="predictions")]])
+    await query.message.reply_text("\n".join(lines), reply_markup=keyboard)
+
+
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -714,6 +894,16 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}\n"
             "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة."
         )
+    elif data == "predictions":
+        await begin_predictions(q, context)
+    elif data.startswith("pred_match:"):
+        await show_prediction_markets(q, context, int(data.split(":", 1)[1]))
+    elif data.startswith("pred_market:"):
+        await show_prediction_choices(q, context, data.split(":", 1)[1])
+    elif data.startswith("pred_pick:"):
+        await save_prediction(q, context, data.split(":", 1)[1])
+    elif data == "pred_history":
+        await show_prediction_history(q, context)
     elif data == "matches_today":
         await matches_today(update, context)
     elif data == "ask_match":
