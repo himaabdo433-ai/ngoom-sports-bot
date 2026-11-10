@@ -358,14 +358,132 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.extend(["مصدر البيانات: SportScore", "https://sportscore.com/"])
     await q.message.reply_text("\n".join(lines))
 
+async def _extract_fixtures(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        matches = payload.get("matches") or payload.get("fixtures") or payload.get("events")
+        if matches is None and isinstance(payload.get("data"), list):
+            matches = payload["data"]
+        elif matches is None and isinstance(payload.get("data"), dict):
+            data = payload["data"]
+            matches = data.get("matches") or data.get("fixtures") or data.get("events")
+        return matches if isinstance(matches, list) else []
+    return []
+
+
+def _fixture_teams(item):
+    home = _team_label(_pick_match_value(item, "home", "home_team", "homeTeam", "team_home"), "")
+    away = _team_label(_pick_match_value(item, "away", "away_team", "awayTeam", "team_away"), "")
+    competitors = item.get("competitors") or []
+    if (not home or not away) and isinstance(competitors, list):
+        for team in competitors:
+            if not isinstance(team, dict):
+                continue
+            side = team.get("homeAway") or team.get("side")
+            label = _team_label(team.get("team") or team, "")
+            if side == "home":
+                home = label
+            elif side == "away":
+                away = label
+        if (not home or not away) and len(competitors) >= 2:
+            home = home or _team_label(competitors[0].get("team") or competitors[0], "")
+            away = away or _team_label(competitors[1].get("team") or competitors[1], "")
+    return home, away
+
+
+def _finished_score(item):
+    status = str(_pick_match_value(item, "status", "state") or "").casefold()
+    finished = status in ("finished", "complete", "completed", "ft", "post", "ended")
+    hs = _pick_match_value(item, "home_score", "homeScore")
+    aws = _pick_match_value(item, "away_score", "awayScore")
+    if hs is None or aws is None:
+        score = item.get("score")
+        if isinstance(score, dict):
+            hs = hs if hs is not None else _pick_match_value(score, "home", "home_score")
+            aws = aws if aws is not None else _pick_match_value(score, "away", "away_score")
+    try:
+        hs, aws = int(hs), int(aws)
+    except (TypeError, ValueError):
+        return None
+    if not finished:
+        return None
+    return hs, aws
+
+
+async def _recent_team_results(team_names, days=14):
+    today = datetime.now(ZoneInfo("Africa/Cairo")).date()
+    date_keys = [(today - timedelta(days=offset)).isoformat() for offset in range(1, days + 1)]
+    payloads = await asyncio.gather(
+        *(fetch_today_fixtures(day) for day in date_keys),
+        return_exceptions=True
+    )
+    wanted = {name.casefold() for name in team_names if name}
+    results = {name: [] for name in wanted}
+    seen = set()
+    for payload in payloads:
+        if isinstance(payload, Exception):
+            continue
+        for item in await _extract_fixtures(payload):
+            if not isinstance(item, dict):
+                continue
+            home, away = _fixture_teams(item)
+            score = _finished_score(item)
+            if not home or not away or score is None:
+                continue
+            home_key, away_key = home.casefold(), away.casefold()
+            match_key = (home_key, away_key, score)
+            if match_key in seen:
+                continue
+            seen.add(match_key)
+            hs, aws = score
+            if home_key in wanted:
+                results[home_key].append({"gf": hs, "ga": aws, "win": hs > aws,
+                                          "draw": hs == aws, "btts": hs > 0 and aws > 0})
+            if away_key in wanted:
+                results[away_key].append({"gf": aws, "ga": hs, "win": aws > hs,
+                                          "draw": hs == aws, "btts": hs > 0 and aws > 0})
+    for rows in results.values():
+        rows.sort(key=lambda row: (row["gf"], row["ga"]), reverse=True)
+        del rows[5:]
+    return results
+
+
+def _form_summary(rows):
+    if not rows:
+        return None
+    count = len(rows)
+    avg_for = sum(x["gf"] for x in rows) / count
+    avg_against = sum(x["ga"] for x in rows) / count
+    wins = sum(x["win"] for x in rows)
+    btts = sum(x["btts"] for x in rows)
+    return {
+        "count": count, "avg_for": avg_for, "avg_against": avg_against,
+        "wins": wins, "btts": btts,
+        "over15": sum(x["gf"] + x["ga"] >= 2 for x in rows),
+        "clean_sheets": sum(x["ga"] == 0 for x in rows)
+    }
+
+
+def _form_text(name, summary):
+    if not summary:
+        return f"• {name}: لم تتوفر نتائج حديثة كافية في المصدر."
+    return (
+        f"• {name} — آخر {summary['count']} مباريات: "
+        f"{summary['wins']} فوز، متوسط تسجيل {summary['avg_for']:.1f} "
+        f"واستقبال {summary['avg_against']:.1f} هدف/مباراة، "
+        f"وسجل في {summary['btts']}/{summary['count']} مباراة."
+    )
+
+
 async def begin_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_match_analysis"] = True
     await update.effective_message.reply_text(
-        "🤖 أهلاً بيك في مساعد نجوم الرياضة!\n"
-        "اكتب اسم المباراة وسؤالك، مثال:\n"
-        "الأهلي والزمالك - هل الفريقان يسجلان؟\n"
-        "أو: ليفربول وأرسنال - هل الركنيات هتكون كتير؟\n\n"
-        "هحلل بالمعلومات المتاحة فقط، ومش هخترع إحصائيات أو نسب."
+        "🤖 مساعد تحليل نجوم الرياضة المطوّر\n"
+        "اكتب اسم الفريقين وسؤالك، مثال:\n"
+        "الأهلي والزمالك - مين الأقرب للفوز؟\n"
+        "ليفربول وأرسنال - هل الفريقان يسجلان؟\n"
+        "اكتب (إلغاء) للرجوع."
     )
 
 
@@ -375,88 +493,103 @@ async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TY
     question = (update.effective_message.text or "").strip()
     if question.lower() in ("إلغاء", "الغاء", "cancel", "خروج"):
         context.user_data.pop("awaiting_match_analysis", None)
-        await update.effective_message.reply_text("تم إلغاء التحليل. تقدر ترجع من القائمة وقت ما تحب.")
+        await update.effective_message.reply_text("تم إلغاء التحليل.")
         return
-
     context.user_data.pop("awaiting_match_analysis", None)
     q = question.casefold()
-    if any(word in q for word in ("ركنيات", "ركنية", "corners")):
-        market = "الركنيات"
-        needed = "متوسط ركنيات كل فريق في آخر 5 إلى 10 مباريات، خصوصًا داخل وخارج ملعبه"
-    elif any(word in q for word in ("يسجل", "التسجيل", "هدف", "أهداف", "btts", "الفريقان")):
-        market = "تسجيل الفريقين"
-        needed = "عدد المباريات التي سجل واستقبل فيها كل فريق أهدافًا في آخر 5 إلى 10 مباريات"
-    elif any(word in q for word in ("يفوز", "الفائز", "الفوز", "انتصار")):
-        market = "الفوز"
-        needed = "نتائج آخر المباريات، ترتيب الفريقين، وأداء صاحب الأرض خارج/داخل ملعبه"
-    else:
-        market = "السوق المطلوب"
-        needed = "إحصائيات الأداء والنتائج الأخيرة للفريقين"
-
-    await update.effective_message.reply_text("⏳ بفحص بيانات المباراة المتاحة...")
+    await update.effective_message.reply_text("⏳ بجمع نتائج آخر أسبوعين للمباراة...")
     today = datetime.now(ZoneInfo("Africa/Cairo"))
     try:
-        payload = await fetch_today_fixtures(today.strftime("%Y-%m-%d"))
-        if isinstance(payload, list):
-            matches = payload
-        elif isinstance(payload, dict):
-            matches = payload.get("matches") or payload.get("fixtures") or payload.get("events")
-            if matches is None and isinstance(payload.get("data"), list):
-                matches = payload["data"]
-            elif matches is None and isinstance(payload.get("data"), dict):
-                data = payload["data"]
-                matches = data.get("matches") or data.get("fixtures") or data.get("events")
-        else:
-            matches = None
+        todays_matches = await _extract_fixtures(
+            await fetch_today_fixtures(today.strftime("%Y-%m-%d"))
+        )
     except Exception:
-        log.exception("Match analysis could not load fixtures")
-        matches = None
+        log.exception("Could not load today's fixtures for match analysis")
+        todays_matches = []
 
     found = None
-    if isinstance(matches, list):
-        for item in matches:
-            if not isinstance(item, dict):
-                continue
-            home = _team_label(_pick_match_value(item, "home", "home_team", "homeTeam", "team_home"), "")
-            away = _team_label(_pick_match_value(item, "away", "away_team", "awayTeam", "team_away"), "")
-            competitors = item.get("competitors") or []
-            if (not home or not away) and isinstance(competitors, list):
-                labels = [_team_label(x.get("team") or x, "") for x in competitors if isinstance(x, dict)]
-                if len(labels) >= 2:
-                    home, away = labels[0], labels[1]
-            home_ar = arabic_display_name(home)
-            away_ar = arabic_display_name(away)
-            if home and away and (home.casefold() in q or away.casefold() in q or
-                                  home_ar.casefold() in q or away_ar.casefold() in q):
-                found = (item, home_ar, away_ar)
-                break
+    for item in todays_matches:
+        if not isinstance(item, dict):
+            continue
+        home, away = _fixture_teams(item)
+        home_ar, away_ar = arabic_display_name(home), arabic_display_name(away)
+        names = (home, away, home_ar, away_ar)
+        if home and away and all(name.casefold() in q for name in (home_ar, away_ar)):
+            found = (item, home, away)
+            break
+        if home and away and (home.casefold() in q and away.casefold() in q):
+            found = (item, home, away)
+            break
 
     if not found:
         await update.effective_message.reply_text(
-            "مش قادر أحدد المباراة دي ضمن مباريات النهارده في مصدرنا.\n"
-            "اكتب اسم الفريقين بوضوح وتاريخ المباراة لو مش هتلعب النهارده.\n\n"
-            "ملحوظة: المصدر المجاني الحالي بيعرض جدول المباريات والنتائج، ومش بيوفر سجل إحصائيات تفصيلي لكل الفرق."
+            "مش لاقي المباراة ضمن جدول النهارده في مصدرنا. "
+            "اكتب اسم الفريقين زي ما ظاهرين في جدول مباريات اليوم."
         )
         return
 
     item, home, away = found
+    try:
+        recent = await _recent_team_results((home, away), days=14)
+    except Exception:
+        log.exception("Recent results lookup failed")
+        recent = {home.casefold(): [], away.casefold(): []}
+    home_form = _form_summary(recent.get(home.casefold(), []))
+    away_form = _form_summary(recent.get(away.casefold(), []))
     competition = _pick_match_value(item, "competition", "league", "tournament")
     if isinstance(competition, dict):
         competition = competition.get("name") or competition.get("title")
-    status = _pick_match_value(item, "status", "state") or "غير محدد"
-    score_h = _pick_match_value(item, "home_score", "homeScore")
-    score_a = _pick_match_value(item, "away_score", "awayScore")
-    score_line = f"النتيجة الحالية: {score_h} - {score_a}\n" if score_h is not None or score_a is not None else ""
-    await update.effective_message.reply_text(
-        f"⚽ تحليل مباراة: {home} × {away}\n"
-        f"🏆 البطولة: {arabic_display_name(competition or 'غير محددة')}\n"
-        f"📌 الحالة: {status}\n{score_line}\n"
-        f"🔎 سؤالك عن: {market}\n\n"
-        "📊 التقييم: البيانات المتاحة حاليًا لا تكفي لإصدار ترشيح موثوق أو نسبة احتمالية. "
-        "مش هقول إن الاختيار قوي من غير أرقام حقيقية.\n\n"
-        f"علشان نقيم السوق ده نحتاج: {needed}.\n"
-        "⚠️ ده مساعد معلوماتي للتسلية والتحليل، مش ضمان لنتيجة أو مكسب."
-    )
+    market_corners = any(word in q for word in ("ركنيات", "ركنية", "corners"))
+    market_btts = any(word in q for word in ("يسجل", "التسجيل", "هدف", "أهداف", "btts", "الفريقان"))
+    market_win = any(word in q for word in ("يفوز", "الفائز", "الفوز", "انتصار", "الأقرب"))
+    lines = [
+        f"⚽ تحليل مباراة: {arabic_display_name(home)} × {arabic_display_name(away)}",
+        f"🏆 البطولة: {arabic_display_name(competition or 'غير محددة')}",
+        "📊 قراءة آخر النتائج المتاحة (حتى 5 مباريات لكل فريق):",
+        _form_text(arabic_display_name(home), home_form),
+        _form_text(arabic_display_name(away), away_form),
+        ""
+    ]
+    if market_corners:
+        lines.extend([
+            "🚩 الركنيات: لا تتوفر إحصائيات ركنيات موثوقة في مصدرنا الحالي، لذلك مش هقدر أرشح عدد أو خط ركنيات."
+        ])
+    elif market_btts:
+        if home_form and away_form:
+            rate = (home_form["btts"] + away_form["btts"]) / (home_form["count"] + away_form["count"])
+            lines.append(
+                f"🎯 مؤشر تسجيل الفريقين تاريخيًا في العينة: {rate*100:.0f}% "
+                f"({home_form['btts'] + away_form['btts']}/{home_form['count'] + away_form['count']} مشاركات فريق)."
+            )
+            lines.append("ده مؤشر وصفي من نتائج سابقة، مش احتمال مباشر للمباراة.")
+        else:
+            lines.append("🎯 لا توجد عينة نتائج كافية لتقييم تسجيل الفريقين.")
+    elif market_win:
+        if home_form and away_form:
+            home_points = (home_form["wins"] * 3 + (home_form["count"] - home_form["wins"] -
+                            sum(x["draw"] for x in recent.get(home.casefold(), []))) ) / home_form["count"]
+            away_points = (away_form["wins"] * 3 + (away_form["count"] - away_form["wins"] -
+                            sum(x["draw"] for x in recent.get(away.casefold(), []))) ) / away_form["count"]
+            if home_points > away_points + 0.35:
+                lean = f"المؤشرات التاريخية تميل نسبيًا إلى {arabic_display_name(home)}."
+            elif away_points > home_points + 0.35:
+                lean = f"المؤشرات التاريخية تميل نسبيًا إلى {arabic_display_name(away)}."
+            else:
+                lean = "المؤشرات متقاربة، ولا يوجد تفوق واضح من العينة."
+            lines.append(f"🏅 مؤشر النقاط لكل مباراة: {home_points:.2f} مقابل {away_points:.2f}.")
+            lines.append(lean)
+        else:
+            lines.append("🏅 لا توجد نتائج كافية للمقارنة.")
+    else:
+        lines.append("💡 اسأل عن الفوز أو تسجيل الفريقين أو الركنيات للحصول على قراءة مخصصة.")
+    lines.extend([
+        "",
+        "⚠️ التحليل مبني على نتائج مسجلة فقط، ولا يشمل الغيابات أو التشكيل أو إحصائيات الركنيات. "
+        "العينة قصيرة ولا تضمن نتيجة أو مكسب."
+    ])
+    await update.effective_message.reply_text("\\n".join(lines))
+
+
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
