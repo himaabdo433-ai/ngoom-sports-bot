@@ -1229,6 +1229,7 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if CHANNEL_ID is None and get_saved_channel_id() is None:
         save_channel_id(post.chat_id)
         log.info("Detected and saved target channel ID: %s", post.chat_id)
+        asyncio.create_task(publish_football_news(context.application))
     if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
         return
     try:
