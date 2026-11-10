@@ -421,7 +421,7 @@ async def _recent_team_results(team_names, days=14):
     wanted = {name.casefold() for name in team_names if name}
     results = {name: [] for name in wanted}
     seen = set()
-    for payload in payloads:
+    for date_key, payload in zip(date_keys, payloads):
         if isinstance(payload, Exception):
             continue
         for item in await _extract_fixtures(payload):
@@ -432,19 +432,19 @@ async def _recent_team_results(team_names, days=14):
             if not home or not away or score is None:
                 continue
             home_key, away_key = home.casefold(), away.casefold()
-            match_key = (home_key, away_key, score)
+            match_key = (date_key, home_key, away_key, score)
             if match_key in seen:
                 continue
             seen.add(match_key)
             hs, aws = score
             if home_key in wanted:
-                results[home_key].append({"gf": hs, "ga": aws, "win": hs > aws,
+                results[home_key].append({"date": date_key, "gf": hs, "ga": aws, "win": hs > aws,
                                           "draw": hs == aws, "btts": hs > 0 and aws > 0})
             if away_key in wanted:
-                results[away_key].append({"gf": aws, "ga": hs, "win": aws > hs,
+                results[away_key].append({"date": date_key, "gf": aws, "ga": hs, "win": aws > hs,
                                           "draw": hs == aws, "btts": hs > 0 and aws > 0})
     for rows in results.values():
-        rows.sort(key=lambda row: (row["gf"], row["ga"]), reverse=True)
+        rows.sort(key=lambda row: row["date"], reverse=True)
         del rows[5:]
     return results
 
@@ -566,10 +566,8 @@ async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TY
             lines.append("🎯 لا توجد عينة نتائج كافية لتقييم تسجيل الفريقين.")
     elif market_win:
         if home_form and away_form:
-            home_points = (home_form["wins"] * 3 + (home_form["count"] - home_form["wins"] -
-                            sum(x["draw"] for x in recent.get(home.casefold(), []))) ) / home_form["count"]
-            away_points = (away_form["wins"] * 3 + (away_form["count"] - away_form["wins"] -
-                            sum(x["draw"] for x in recent.get(away.casefold(), []))) ) / away_form["count"]
+            home_points = (home_form["wins"] * 3 + sum(x["draw"] for x in recent.get(home.casefold(), []))) / home_form["count"]
+            away_points = (away_form["wins"] * 3 + sum(x["draw"] for x in recent.get(away.casefold(), []))) / away_form["count"]
             if home_points > away_points + 0.35:
                 lean = f"المؤشرات التاريخية تميل نسبيًا إلى {arabic_display_name(home)}."
             elif away_points > home_points + 0.35:
