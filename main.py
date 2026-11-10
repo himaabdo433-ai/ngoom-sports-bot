@@ -302,8 +302,6 @@ async def publish_football_news(app):
         lines.append(f"{index}) {item['title']}")
         if item["summary"]:
             lines.append(item["summary"])
-        lines.append(f"المصدر: {item['source']}")
-        lines.append(item["link"])
         lines.append("")
     message = "\n".join(lines).strip()
     if len(message) > 3900:
