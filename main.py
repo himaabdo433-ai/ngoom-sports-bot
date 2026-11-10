@@ -493,9 +493,8 @@ async def begin_capital_manager(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.pop("awaiting_match_analysis", None)
     await update.effective_message.reply_text(
         "💰 إدارة رأس المال الذكية\n"
-        "اكتب إجمالي المبلغ المخصص للترفيه/المراهنة بالجنيه، مثال: 1000\n"
-        "هنحسب حدًا يوميًا صغيرًا للمخاطرة ونقسمه على 3 مباريات كحد أقصى، "
-        "ونوضح لك المبلغ اللي يفضل احتياطيًا.\n"
+        "اكتب إجمالي الميزانية التي خصصتها للترفيه فقط بالجنيه، مثال: 5000\n"
+        "بعدها اختار طريقة التوزيع المناسبة. المبلغ المدخل مش معناه إنك لازم تستخدمه كله.\n"
         "اكتب (إلغاء) للرجوع."
     )
 
@@ -521,34 +520,60 @@ async def handle_capital_plan(update: Update, context: ContextTypes.DEFAULT_TYPE
     if amount is None:
         context.user_data["awaiting_capital_amount"] = True
         await update.effective_message.reply_text(
-            "اكتب مبلغًا صحيحًا بالجنيه من 100 إلى 10,000,000، مثال: 1000. أو اكتب (إلغاء)."
+            "اكتب مبلغًا صحيحًا بالجنيه من 100 إلى 10,000,000، مثال: 5000. أو اكتب (إلغاء)."
         )
         return
 
-    daily_cap = max(1, round(amount * 0.02))
-    match_count = 3 if daily_cap >= 15 else (2 if daily_cap >= 6 else 1)
+    context.user_data["capital_amount"] = amount
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🟢 محافظ - 1%", callback_data="capital_mode:conservative")],
+        [InlineKeyboardButton("🟡 متوازن - 2%", callback_data="capital_mode:balanced")],
+        [InlineKeyboardButton("🔵 توزيع مستقل بدون تجميع - 1.5%", callback_data="capital_mode:singles")],
+    ])
+    await update.effective_message.reply_text(
+        f"💵 الميزانية المسجلة: {amount:,} جنيه\n\n"
+        "اختار أسلوب تنظيم الميزانية اليومية. النسب دي حدود قصوى مقترحة وليست هدفًا لازم تصرفه:",
+        reply_markup=keyboard
+    )
+
+
+async def send_capital_plan(query, context, mode):
+    amount = context.user_data.get("capital_amount")
+    if not isinstance(amount, int) or amount < 100:
+        await query.message.reply_text("ابدأ من جديد واضغط زر إدارة رأس المال.")
+        return
+    presets = {
+        "conservative": ("محافظ", 0.01, 2),
+        "balanced": ("متوازن", 0.02, 3),
+        "singles": ("رهانات منفصلة بدون تجميع", 0.015, 3),
+    }
+    label, rate, match_count = presets[mode]
+    daily_cap = max(1, int(amount * rate))
+    match_count = min(match_count, daily_cap)
     base, remainder = divmod(daily_cap, match_count)
     stakes = [base + (1 if i < remainder else 0) for i in range(match_count)]
     reserve = amount - daily_cap
     lines = [
-        "💰 خطة إدارة رأس المال",
-        f"💵 رأس المال المدخل: {amount:,} جنيه",
-        "🛡️ الحد الأقصى المقترح للمخاطرة اليوم: 2% فقط",
-        f"🎯 إجمالي المبلغ المخصص اليوم: {daily_cap:,} جنيه",
+        "💰 خطة تنظيم الميزانية",
+        f"💵 الميزانية: {amount:,} جنيه",
+        f"⚙️ النظام: {label}",
+        f"🎯 الحد الأقصى لميزانية اليوم: {daily_cap:,} جنيه ({rate * 100:g}%)",
         "",
-        "تقسيم متساوٍ على مباريات تختارها أنت:",
+        "تقسيم افتراضي متساوٍ، وكل اختيار مستقل عن الآخر:",
     ]
     for i, stake in enumerate(stakes, 1):
-        lines.append(f"• المباراة {i}: {stake:,} جنيه")
+        lines.append(f"• الاختيار {i}: {stake:,} جنيه")
     lines.extend([
         "",
-        f"🏦 المبلغ الاحتياطي غير المستخدم: {reserve:,} جنيه",
-        "📌 لو مفيش اختيارات مناسبة، عادي جدًا ما تراهنش وخلي المبلغ كله احتياطي.",
-        "⛔ ممنوع تعويض الخسارة بزيادة الرهان أو استخدام فلوس الالتزامات.",
+        f"🏦 المتبقي خارج ميزانية اليوم: {reserve:,} جنيه",
+        "📌 مش لازم تستخدم الحد كله؛ لو مفيش اختيار مناسب، خليه احتياطي.",
+        "⛔ لا تجمع اختيارات في كود واحد، ولا تزود المبلغ لتعويض خسارة.",
+        "⛔ استخدم فقط مبلغًا تقدر تتحمل خسارته بالكامل، وليس فلوس المعيشة أو الديون.",
         "",
-        "دي حاسبة ميزانية وليست ترشيحات مباريات أو ضمان مكسب. لا نملك بيانات odds كافية لتحديد قيمة رهان مربح."
+        "دي حاسبة لتنظيم حد الخسارة وليست توصية بالمراهنة أو ضمانًا للمكسب. لا تعتمد على التوقعات كمصدر دخل."
     ])
-    await update.effective_message.reply_text("\n".join(lines))
+    context.user_data.pop("capital_amount", None)
+    await query.message.reply_text("\\n".join(lines))
 
 
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -695,6 +720,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await begin_match_analysis(update, context)
     elif data == "capital_manager":
         await begin_capital_manager(update, context)
+    elif data.startswith("capital_mode:"):
+        await send_capital_plan(q, context, data.split(":", 1)[1])
     elif data == "daily_gift":
         today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
         with db() as con:
