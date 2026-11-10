@@ -548,7 +548,7 @@ async def handle_capital_plan(update: Update, context: ContextTypes.DEFAULT_TYPE
         "",
         "دي حاسبة ميزانية وليست ترشيحات مباريات أو ضمان مكسب. لا نملك بيانات odds كافية لتحديد قيمة رهان مربح."
     ])
-    await update.effective_message.reply_text("\\n".join(lines))
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
