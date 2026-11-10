@@ -1270,10 +1270,12 @@ def main():
     app.add_handler(CommandHandler("setgift", setgift))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_button))
+    # Handle forwarded channel posts before generic text/photo handlers.
+    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, capture_forwarded_channel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
-    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, capture_forwarded_channel))
+
     async def post_init(application):
         application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
         application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
