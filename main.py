@@ -368,7 +368,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.extend(["مصدر البيانات: SportScore", "https://sportscore.com/"])
     await q.message.reply_text("\n".join(lines))
 
-async def _extract_fixtures(payload):
+def _extract_fixtures(payload):
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
