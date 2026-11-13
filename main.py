@@ -971,6 +971,35 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     data = q.data or ""
+    if data == "gift_paid_publish":
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        photo_id = context.user_data.pop("gift_paid_photo_id", None)
+        channel_id = get_saved_channel_id()
+        if not photo_id:
+            await q.message.reply_text("مفيش صورة جاهزة للنشر. ابعت الصورة من جديد.")
+            return
+        if not channel_id:
+            await q.message.reply_text("القناة مش محفوظة في البوت. ابعت منشورًا مُعاد توجيهه من القناة للأدمن أولًا.")
+            return
+        caption = (
+            "🎉🏆 تم دفع جائزة كود الهدية بنجاح!\\n\\n"
+            "مبروك للفائزين ❤️\\n\\n"
+            "تابعونا باستمرار، فالهدايا والمفاجآت مستمرة مع نجوم الرياضة 👑\\n\\n"
+            "نجوم الرياضة | ELITE PRO"
+        )
+        try:
+            await context.bot.send_photo(chat_id=channel_id, photo=photo_id, caption=caption)
+            await q.message.reply_text("✅ تم نشر صورة إعلان دفع جائزة كود الهدية على القناة.")
+        except Exception:
+            log.exception("Could not publish gift-paid announcement")
+            await q.message.reply_text("تعذر نشر الصورة. تأكد إن البوت أدمن في القناة وعنده صلاحية النشر.")
+        return
+    elif data == "gift_paid_cancel":
+        context.user_data.pop("gift_paid_photo_id", None)
+        await q.message.reply_text("تم إلغاء نشر إعلان الجائزة.")
+        return
     if data.startswith("plan:"):
         plan = data.split(":", 1)[1]
         if plan == "weekly":
@@ -1056,6 +1085,24 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
                 await context.bot.send_message(row["user_id"], "الإيصال لم يتم اعتماده. تواصل مع الإدارة للمراجعة.")
                 await q.message.reply_text("تم رفض الطلب.")
+
+async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user or user.id not in ADMIN_IDS:
+        return
+    if not message.photo:
+        return
+    context.user_data["gift_paid_photo_id"] = message.photo[-1].file_id
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ تأكيد النشر على القناة", callback_data="gift_paid_publish"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="gift_paid_cancel")
+    ]])
+    await message.reply_text(
+        "وصلت الصورة يا أدمن 👑\\nراجعها، واضغط تأكيد النشر عشان أنزلها على قناة نجوم الرياضة بالنص المعتمد.",
+        reply_markup=keyboard
+    )
+
 
 async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plan = context.user_data.get("pending_plan")
@@ -1171,8 +1218,9 @@ def main():
     app.add_handler(CallbackQueryHandler(on_button))
     # Handle forwarded channel posts before generic text/photo handlers.
     app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, capture_forwarded_channel))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, gift_paid_photo), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt), group=1)
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
 
     async def post_init(application):
