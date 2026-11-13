@@ -982,20 +982,25 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         photo_id = context.user_data.pop("daily_gift_photo_id", None)
         caption = context.user_data.pop("daily_gift_caption", None)
+        code = context.user_data.pop("daily_gift_code", None)
         if not photo_id or not caption:
-            await q.message.reply_text("الصورة أو النص مش موجودين. ابعت الصورة والنص في وصفها من جديد.")
+            await q.message.reply_text("الصورة أو الكود مش موجودين. ابعت /setgift CODE وبعدها الصورة من جديد.")
             return
+        if not code:
+            code = caption
         today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
         with db() as con:
             con.execute("""INSERT INTO daily_gifts(gift_date, code, photo_file_id, caption)
                 VALUES(?,?,?,?) ON CONFLICT(gift_date) DO UPDATE SET
                 code=excluded.code, photo_file_id=excluded.photo_file_id, caption=excluded.caption""",
-                (today, caption, photo_id, caption))
+                (today, code, photo_id, caption))
         await q.message.reply_text("✅ تم حفظ صورة ونص هدية النهارده. الأعضاء هيستلموهم لما يضغطوا 🎁 الهدية اليومية.")
         return
     elif data == "daily_gift_cancel":
         context.user_data.pop("daily_gift_photo_id", None)
         context.user_data.pop("daily_gift_caption", None)
+        context.user_data.pop("daily_gift_code", None)
+        context.user_data.pop("pending_daily_gift_code", None)
         await q.message.reply_text("تم إلغاء إعداد الهدية اليومية.")
         return
     if data == "gift_paid_publish":
@@ -1131,16 +1136,32 @@ async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not message.photo:
         return
-    # An admin photo with a caption is today's image-based gift.
-    if message.caption and message.caption.strip():
+    # If /setgift CODE was sent first, pair that code with the next admin photo.
+    pending_code = context.user_data.pop("pending_daily_gift_code", None)
+    if pending_code:
         context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
-        context.user_data["daily_gift_caption"] = message.caption.strip()
+        context.user_data["daily_gift_code"] = pending_code
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{pending_code}"
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
             InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
         ]])
         await message.reply_text(
-            "وصلت صورة كود الهدية والنص يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم. الأعضاء هيستلموا الصورة والنص لما يضغطوا زر الهدية اليومية.",
+            f"وصلت الصورة وكود الهدية ({pending_code}) يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
+            reply_markup=keyboard
+        )
+        return
+    # Also accept an image with its code written in the photo caption.
+    if message.caption and message.caption.strip():
+        context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
+        context.user_data["daily_gift_code"] = message.caption.strip()
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{message.caption.strip()}"
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
+            InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
+        ]])
+        await message.reply_text(
+            "وصلت صورة كود الهدية والنص يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
             reply_markup=keyboard
         )
         return
@@ -1199,13 +1220,14 @@ async def setgift(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
         return
     if not context.args:
-        await update.effective_message.reply_text("استخدم الأمر كده:\n/setgift CODE")
+        await update.effective_message.reply_text("استخدم الأمر كده:\n/setgift CODE\nوبعدها ابعت صورة الهدية.")
         return
     code = " ".join(context.args).strip()
-    today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
-    with db() as con:
-        con.execute("INSERT INTO daily_gifts(gift_date, code) VALUES(?, ?) ON CONFLICT(gift_date) DO UPDATE SET code=excluded.code", (today, code))
-    await update.effective_message.reply_text("تم ضبط هدية النهارده بنجاح 🎁")
+    context.user_data["pending_daily_gift_code"] = code
+    await update.effective_message.reply_text(
+        "تمام 👑 كود الهدية اتسجل مؤقتًا. ابعت صورة الهدية دلوقتي في رسالة منفصلة، "
+        "وهعرضهالك للتأكيد قبل الحفظ."
+    )
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
