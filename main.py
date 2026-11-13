@@ -188,145 +188,46 @@ async def daily_channel_publisher(app):
 
 
 
-# Curated Arabic football-news feeds. The bot republishes only short feed summaries,
-# with attribution and a link to the original publisher.
-FOOTBALL_NEWS_FEEDS = [
-    ("https://alikhbariya.net/feeds/topics/football.xml", "الإخبارية - كرة القدم"),
-    ("https://aawsat.com/feed/sport", "الشرق الأوسط - رياضة"),
-]
-NEWS_IMPORTANCE_TERMS = (
-    "عاجل", "رسميًا", "رسميا", "رسمي", "يتعاقد", "تعاقد", "ضم ", "ينضم",
-    "انتقال", "صفقة", "إصابة", "اصابة", "يغيب", "إقالة", "اقالة",
-    "استقالة", "إيقاف", "ايقاف", "عقوبة", "يتوج", "توج", "تأهل",
-    "تاهل", "يودع", "نهائي", "انسحاب", "فسخ", "قرار", "مدرب جديد"
-)
-FOOTBALL_TERMS = (
-    "كرة القدم", "الدوري", "كأس", "الكلاسيكو", "ريال مدريد", "برشلونة",
-    "ليفربول", "مانشستر", "الأهلي", "الزمالك", "الهلال", "النصر",
-    "مبابي", "صلاح", "رونالدو", "ميسي", "فيفا", "يويفا", "الاتحاد",
-    "مدرب", "مهاجم", "حارس", "لاعب", "نادي", "منتخب", "مباراة",
-    "champions league", "premier league", "football", "soccer"
-)
+# ELITE PRO promotional posts replace the former football-news feed.
+ELITE_PROMO_TEXT = """👑 عايز تدخل عالم التوقعات الاحترافية؟
 
-def _xml_text(element, names):
-    for child in element.iter():
-        tag = child.tag.rsplit("}", 1)[-1].lower()
-        if tag in names:
-            value = child.attrib.get("href") or child.text
-            if value:
-                return str(value).strip()
-    return ""
+🔥 انضم إلى قناة النخبة من نجوم الرياضة.
 
-def _clean_news_text(value, limit=320):
-    value = html.unescape(str(value or ""))
-    value = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", value, flags=re.I | re.S)
-    value = re.sub(r"<[^>]+>", " ", value)
-    value = re.sub(r"\s+", " ", value).strip()
-    if len(value) > limit:
-        value = value[:limit].rsplit(" ", 1)[0].rstrip(" .،؛") + "…"
-    return value
+⚽ توقعات مميزة
+📊 تحليلات ومتابعة للمباريات
+🎯 ترشيحات فردية وتراكمية وLIVE وقسائم محميه في حاله سقوط احداث
 
-def _is_important_football_news(title, summary):
-    text = (title + " " + summary).casefold()
-    has_football = any(term.casefold() in text for term in FOOTBALL_TERMS)
-    has_importance = any(term.casefold() in text for term in NEWS_IMPORTANCE_TERMS)
-    return has_football and has_importance
+💎 لو عايز مستوى مختلف، مكانك معانا في النخبة.
 
-def _read_news_feed(url):
-    request = Request(url, headers={
-        "User-Agent": "NogoomSportsBot/1.0",
-        "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml"
-    })
-    with urlopen(request, timeout=20) as response:
-        root = ET.fromstring(response.read())
-    items = []
-    for item in root.iter():
-        if item.tag.rsplit("}", 1)[-1].lower() not in ("item", "entry"):
-            continue
-        title = _clean_news_text(_xml_text(item, {"title"}), 180)
-        link = _xml_text(item, {"link"})
-        summary = _clean_news_text(_xml_text(item, {"description", "summary", "encoded", "content"}), 320)
-        source = _clean_news_text(_xml_text(item, {"source", "creator", "author"}), 70)
-        if title and link and link.startswith(("https://", "http://")):
-            items.append({"title": title, "link": link, "summary": summary, "source": source or urlparse(url).netloc})
-    return items[:40]
+📩 اشترك الآن ولا تفوّت الفرصة.
+للاشتراك او لتجديد الاشتراك تواصل @ngoomredaabot
 
-async def _fetch_news_feed(url):
-    return await asyncio.to_thread(_read_news_feed, url)
+نجوم الرياضة | ELITE PRO"""
 
-async def publish_football_news(app):
+async def publish_elite_promo(app):
     channel_id = get_saved_channel_id()
     if not channel_id:
-        log.warning("Football news publisher: target channel is not set yet")
+        log.warning("ELITE PRO promo: target channel is not set")
         return
-    all_items = []
-    for feed_url, feed_label in FOOTBALL_NEWS_FEEDS:
-        try:
-            entries = await _fetch_news_feed(feed_url)
-            for item in entries:
-                item["feed_label"] = feed_label
-                all_items.append(item)
-        except Exception:
-            log.exception("Could not read football news feed: %s", feed_label)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📩 اشترك أو جدّد اشتراكك", url="https://t.me/ngoomredaabot")
+    ]])
+    await app.bot.send_message(
+        chat_id=channel_id,
+        text=ELITE_PROMO_TEXT,
+        reply_markup=keyboard,
+        disable_web_page_preview=True
+    )
+    log.info("ELITE PRO promotional post sent to channel %s", channel_id)
 
-    if not all_items:
-        return
-
-    with db() as con:
-        existing_count = con.execute("SELECT COUNT(*) AS n FROM football_news_seen").fetchone()["n"]
-        if existing_count == 0:
-            # First run only records the current feed contents; it does not dump old news.
-            con.executemany(
-                "INSERT OR IGNORE INTO football_news_seen(link, title, seen_at) VALUES(?,?,?)",
-                [(item["link"], item["title"], datetime.now(timezone.utc).isoformat()) for item in all_items]
-            )
-            log.info("Football news baseline saved (%s items); no old items posted", len(all_items))
-            return
-        unseen = []
-        for item in all_items:
-            cur = con.execute(
-                "INSERT OR IGNORE INTO football_news_seen(link, title, seen_at) VALUES(?,?,?)",
-                (item["link"], item["title"], datetime.now(timezone.utc).isoformat())
-            )
-            if cur.rowcount:
-                unseen.append(item)
-
-    important = [item for item in unseen if _is_important_football_news(item["title"], item["summary"])]
-    if not important:
-        log.info("Football news check complete: no important new items")
-        return
-
-    important = important[:5]
-    lines = ["🚨 موجز أهم أخبار كرة القدم | نجوم الرياضة ⭐", ""]
-    for index, item in enumerate(important, 1):
-        lines.append(f"{index}) {item['title']}")
-        if item["summary"]:
-            lines.append(item["summary"])
-        lines.append("")
-    message = "\n".join(lines).strip()
-    if len(message) > 3900:
-        message = message[:3850].rsplit("\n", 1)[0] + "\n…"
-    try:
-        sent = await app.bot.send_message(chat_id=channel_id, text=message, disable_web_page_preview=True)
-        log.info("Posted %s important football news items as channel message %s", len(important), sent.message_id)
-    except Exception:
-        log.exception("Could not publish football news digest")
-        # Remove the unseen markers so the next 4-hour check can retry the post.
-        with db() as con:
-            con.executemany("DELETE FROM football_news_seen WHERE link=?", [(item["link"],) for item in important])
-
-async def football_news_publisher(app):
-    # Establish a baseline at startup, then check every four hours.
-    try:
-        await publish_football_news(app)
-    except Exception:
-        log.exception("Initial football news scan failed")
+async def elite_promo_publisher(app):
     while True:
-        await asyncio.sleep(4 * 60 * 60)
         try:
-            await publish_football_news(app)
+            if get_saved_channel_id():
+                await publish_elite_promo(app)
         except Exception:
-            log.exception("Scheduled football news scan failed")
+            log.exception("ELITE PRO scheduled promotion failed")
+        await asyncio.sleep(4 * 60 * 60)
 
 def home_keyboard():
     return InlineKeyboardMarkup([
@@ -1233,8 +1134,8 @@ async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAUL
         return
     save_channel_id(channel.id)
     log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
-    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ متابعة الأخبار الجديدة كل 4 ساعات.")
-    asyncio.create_task(publish_football_news(context.application))
+    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ نشر إعلان قناة النخبة كل 4 ساعات.")
+    asyncio.create_task(publish_elite_promo(context.application))
 
 async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = update.channel_post
@@ -1243,7 +1144,7 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if CHANNEL_ID is None and get_saved_channel_id() is None:
         save_channel_id(post.chat_id)
         log.info("Detected and saved target channel ID: %s", post.chat_id)
-        asyncio.create_task(publish_football_news(context.application))
+        asyncio.create_task(publish_elite_promo(context.application))
     if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
         return
     try:
@@ -1277,7 +1178,7 @@ def main():
     async def post_init(application):
         application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
         application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
-        application.bot_data["football_news_task"] = asyncio.create_task(football_news_publisher(application))
+        application.bot_data["elite_promo_task"] = asyncio.create_task(elite_promo_publisher(application))
     app.post_init = post_init
     log.info("Nogoom Sports bot is starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
