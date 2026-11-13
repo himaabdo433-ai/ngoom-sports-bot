@@ -990,8 +990,16 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "نجوم الرياضة | ELITE PRO"
         )
         try:
-            await context.bot.send_photo(chat_id=channel_id, photo=photo_id, caption=caption)
-            await q.message.reply_text("✅ تم نشر صورة إعلان دفع جائزة كود الهدية على القناة.")
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎁 ادخل بوت نجوم الرياضة", url="https://t.me/ngoomredaabot")
+            ]])
+            await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photo_id,
+                caption=caption,
+                reply_markup=keyboard
+            )
+            await q.message.reply_text("✅ تم نشر صورة إعلان دفع جائزة كود الهدية على القناة، ومعاها زر دخول البوت.")
         except Exception:
             log.exception("Could not publish gift-paid announcement")
             await q.message.reply_text("تعذر نشر الصورة. تأكد إن البوت أدمن في القناة وعنده صلاحية النشر.")
