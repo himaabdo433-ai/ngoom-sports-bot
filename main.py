@@ -984,9 +984,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text("القناة مش محفوظة في البوت. ابعت منشورًا مُعاد توجيهه من القناة للأدمن أولًا.")
             return
         caption = (
-            "🎉🏆 تم دفع جائزة كود الهدية بنجاح!\\n\\n"
-            "مبروك للفائزين ❤️\\n\\n"
-            "تابعونا باستمرار، فالهدايا والمفاجآت مستمرة مع نجوم الرياضة 👑\\n\\n"
+            "🎉🏆 تم دفع جائزة كود الهدية بنجاح!\n\n"
+            "مبروك للفائزين ❤️\n\n"
+            "تابعونا باستمرار، فالهدايا والمفاجآت مستمرة مع نجوم الرياضة 👑\n\n"
             "نجوم الرياضة | ELITE PRO"
         )
         try:
@@ -1099,12 +1099,14 @@ async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("❌ إلغاء", callback_data="gift_paid_cancel")
     ]])
     await message.reply_text(
-        "وصلت الصورة يا أدمن 👑\\nراجعها، واضغط تأكيد النشر عشان أنزلها على قناة نجوم الرياضة بالنص المعتمد.",
+        "وصلت الصورة يا أدمن 👑\nراجعها، واضغط تأكيد النشر عشان أنزلها على قناة نجوم الرياضة بالنص المعتمد.",
         reply_markup=keyboard
     )
 
 
 async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user and update.effective_user.id in ADMIN_IDS:
+        return
     plan = context.user_data.get("pending_plan")
     if not plan:
         await update.effective_message.reply_text("اختار نوع الاشتراك الأول من /start.")
