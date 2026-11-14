@@ -1180,6 +1180,26 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 pass
         await q.message.reply_text("مفيش اشتراك نشط حاليًا.", reply_markup=home_keyboard())
+    elif data.startswith("send_group_link:"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        pending_id = int(data.split(":", 1)[1])
+        with db() as con:
+            row = con.execute("SELECT user_id FROM pending WHERE id=?", (pending_id,)).fetchone()
+        if not row:
+            await q.message.reply_text("طلب الاشتراك غير موجود أو تم التعامل معه بالفعل.")
+            return
+        try:
+            await context.bot.send_message(
+                chat_id=row["user_id"],
+                text="أهلاً بيك ❤️\nده لينك دخول جروب نجوم الرياضة النخبة:\nhttps://t.me/+ri52W-OfZks4NDE8\n\nنورتنا 👑"
+            )
+            await q.message.reply_text("✅ تم إرسال لينك الجروب للعضو في الخاص.")
+        except Exception:
+            log.exception("Could not send group invite link to user %s", row["user_id"])
+            await q.message.reply_text("❌ مقدرتش أبعتله اللينك. غالبًا العضو ما بدأش البوت أو عامل حظر. خليه يفتح البوت ويضغط Start الأول.")
+        return
     elif data.startswith("approve:") or data.startswith("reject:"):
         if q.from_user.id not in ADMIN_IDS:
             return
@@ -1285,10 +1305,13 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"الخطة: {'أسبوعي' if plan == 'weekly' else 'شهري'}\n"
         f"المبلغ: {amount} جنيه"
     )
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("قبول وتفعيل", callback_data=f"approve:{pending_id}"),
-        InlineKeyboardButton("رفض", callback_data=f"reject:{pending_id}")
-    ]])
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("قبول وتفعيل", callback_data=f"approve:{pending_id}"),
+            InlineKeyboardButton("رفض", callback_data=f"reject:{pending_id}")
+        ],
+        [InlineKeyboardButton("📩 إرسال لينك الجروب", callback_data=f"send_group_link:{pending_id}")]
+    ])
     for admin_id in ADMIN_IDS:
         try:
             if update.effective_message.photo:
