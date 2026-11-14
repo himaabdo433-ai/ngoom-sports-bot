@@ -257,7 +257,7 @@ async def elite_promo_publisher(app):
                 await publish_elite_promo(app)
         except Exception:
             log.exception("ELITE PRO scheduled promotion failed")
-        await asyncio.sleep(4 * 60 * 60)
+        await asyncio.sleep(5 * 60 * 60)
 
 def home_keyboard(user_id=None):
     rows = [
@@ -1365,7 +1365,7 @@ async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAUL
         return
     save_channel_id(channel.id)
     log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
-    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ نشر إعلان قناة النخبة كل 4 ساعات.")
+    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ نشر إعلان قناة النخبة كل 5 ساعات.")
     asyncio.create_task(publish_elite_promo(context.application))
 
 async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
