@@ -58,6 +58,16 @@ def init_db():
         if "caption" not in gift_columns:
             con.execute("ALTER TABLE daily_gifts ADD COLUMN caption TEXT")
         con.execute("CREATE TABLE IF NOT EXISTS bot_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        con.execute("""CREATE TABLE IF NOT EXISTS bot_visitors (
+            user_id INTEGER PRIMARY KEY, username TEXT, full_name TEXT,
+            first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, start_count INTEGER NOT NULL DEFAULT 0
+        )""")
+        con.execute("""CREATE TABLE IF NOT EXISTS bot_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL, event_key TEXT, created_at TEXT NOT NULL
+        )""")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_created ON bot_events(created_at)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_key ON bot_events(event_key)")
         con.execute("CREATE TABLE IF NOT EXISTS daily_posts (post_date TEXT PRIMARY KEY, message_id INTEGER)")
         con.execute("""CREATE TABLE IF NOT EXISTS football_news_seen (
             link TEXT PRIMARY KEY, title TEXT NOT NULL, seen_at TEXT NOT NULL
@@ -70,6 +80,21 @@ def init_db():
         )""")
         con.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_unique
             ON predictions(user_id, match_date, home_team, away_team, market)""")
+
+def track_bot_event(user, event_type, event_key=None):
+    if not user:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        con.execute("""INSERT INTO bot_visitors(user_id, username, full_name, first_seen, last_seen, start_count)
+            VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+            username=excluded.username, full_name=excluded.full_name,
+            last_seen=excluded.last_seen,
+            start_count=bot_visitors.start_count + excluded.start_count""",
+            (user.id, user.username, user.full_name, now, now, 1 if event_type == "start" else 0))
+        con.execute("INSERT INTO bot_events(user_id, event_type, event_key, created_at) VALUES(?,?,?,?)",
+                    (user.id, event_type, event_key, now))
+
 
 def get_saved_channel_id():
     if CHANNEL_ID is not None:
@@ -234,8 +259,8 @@ async def elite_promo_publisher(app):
             log.exception("ELITE PRO scheduled promotion failed")
         await asyncio.sleep(4 * 60 * 60)
 
-def home_keyboard():
-    return InlineKeyboardMarkup([
+def home_keyboard(user_id=None):
+    rows = [
         [InlineKeyboardButton("اشتراك أسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
@@ -245,15 +270,19 @@ def home_keyboard():
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
         [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")]
-    ])
+    ]
+    if user_id in ADMIN_IDS:
+        rows.append([InlineKeyboardButton("📊 إحصائيات البوت", callback_data="bot_stats")])
+    return InlineKeyboardMarkup(rows)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_bot_event(update.effective_user, "start")
     msg = (
         "أهلاً بيك في جروب نجوم الرياضة النخبة ⭐\n"
         "أفضل وأقوى التوقعات الرياضية.\n\n"
         "تحب تشترك أسبوعي ولا شهري؟"
     )
-    await update.effective_message.reply_text(msg, reply_markup=home_keyboard())
+    await update.effective_message.reply_text(msg, reply_markup=home_keyboard(update.effective_user.id))
 
 
 async def fetch_today_fixtures(date_key):
@@ -973,10 +1002,66 @@ async def show_prediction_history(query, context):
     await query.message.reply_text("\n".join(lines), reply_markup=keyboard)
 
 
+async def show_bot_stats(message):
+    now = datetime.now(timezone.utc)
+    week_ago = (now - timedelta(days=7)).isoformat()
+    with db() as con:
+        total_users = con.execute("SELECT COUNT(*) n FROM bot_visitors").fetchone()["n"]
+        total_starts = con.execute("SELECT COALESCE(SUM(start_count),0) n FROM bot_visitors").fetchone()["n"]
+        active_week = con.execute("SELECT COUNT(*) n FROM bot_visitors WHERE last_seen >= ?", (week_ago,)).fetchone()["n"]
+        total_clicks = con.execute("SELECT COUNT(*) n FROM bot_events WHERE event_type='button'").fetchone()["n"]
+        top_buttons = con.execute("""SELECT event_key, COUNT(*) n FROM bot_events
+            WHERE event_type='button' AND event_key IS NOT NULL AND event_key != 'bot_stats'
+            GROUP BY event_key ORDER BY n DESC LIMIT 5""").fetchall()
+        active_subs = con.execute("SELECT COUNT(*) n FROM users WHERE expires_at > ?",
+                                  (now.isoformat(),)).fetchone()["n"]
+        pending_count = con.execute("SELECT COUNT(*) n FROM pending").fetchone()["n"]
+    labels = {
+        "plan:weekly": "اشتراك أسبوعي", "plan:monthly": "اشتراك شهري",
+        "status": "حالة الاشتراك", "matches_today": "مباريات اليوم",
+        "ask_match": "اسأل عن مباراة", "predictions": "سجل توقعاتك",
+        "pred_history": "سجل التوقعات", "capital_manager": "إدارة رأس المال",
+        "daily_gift": "الهدية اليومية"
+    }
+    lines = [
+        "📊 إحصائيات بوت نجوم الرياضة",
+        "",
+        f"👥 إجمالي المستخدمين المسجلين: {total_users}",
+        f"🚀 مرات الضغط على /start: {total_starts}",
+        f"🟢 المستخدمون النشطون آخر 7 أيام: {active_week}",
+        f"🖱️ إجمالي ضغطات الأزرار: {total_clicks}",
+        f"💎 الاشتراكات النشطة: {active_subs}",
+        f"⏳ طلبات الاشتراك قيد المراجعة: {pending_count}",
+        "",
+        "🔥 أكثر الأزرار استخدامًا:"
+    ]
+    if top_buttons:
+        lines.extend([f"{i}. {labels.get(row['event_key'], row['event_key'])}: {row['n']} ضغطة"
+                      for i, row in enumerate(top_buttons, 1)])
+    else:
+        lines.append("لسه مفيش ضغطات مسجلة.")
+    lines.extend(["", "📌 الإحصائيات بدأت تتسجل من وقت تفعيل الميزة، ومش بتشمل الزيارات القديمة."])
+    await message.reply_text("\\n".join(lines))
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الخاصية دي للإدارة فقط.")
+        return
+    await show_bot_stats(update.effective_message)
+
+
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     data = q.data or ""
+    track_bot_event(q.from_user, "button", data)
+    if data == "bot_stats":
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        await show_bot_stats(q.message)
+        return
     if data == "daily_gift_publish":
         if q.from_user.id not in ADMIN_IDS:
             await q.message.reply_text("الخاصية دي للإدارة فقط.")
@@ -1289,6 +1374,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("setgift", setgift))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_button))
