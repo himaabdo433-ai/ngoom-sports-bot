@@ -1041,7 +1041,7 @@ async def show_bot_stats(message):
     else:
         lines.append("لسه مفيش ضغطات مسجلة.")
     lines.extend(["", "📌 الإحصائيات بدأت تتسجل من وقت تفعيل الميزة، ومش بتشمل الزيارات القديمة."])
-    await message.reply_text("\\n".join(lines))
+    await message.reply_text("\n".join(lines))
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
