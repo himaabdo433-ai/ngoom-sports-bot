@@ -243,7 +243,8 @@ def home_keyboard():
         [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
         [InlineKeyboardButton("🎯 سجل توقعاتك", callback_data="predictions")],
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
-        [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")]
+        [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
+        [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")]
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
