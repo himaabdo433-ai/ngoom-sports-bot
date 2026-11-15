@@ -185,7 +185,7 @@ async def build_daily_matches_text():
             lines.extend([f"🏆 {competition}", f"⚽ {home} × {away}",
                           f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر",
                           f"📌 {state}", ""])
-    lines.extend(["تابعوا نجوم الرياضة ⭐", "مصدر البيانات: SportScore"])
+    lines.extend(["تابعوا نجوم الرياضة ⭐", "مصدر البيانات: في الجول | FilGoal"])
     return "\n".join(lines)
 
 
@@ -286,18 +286,103 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def fetch_today_fixtures(date_key):
-    url = f"https://sportscore.com/api/v1/fixtures/?sport=football&date={date_key}&limit=200"
-    request = Request(url, headers={
-        "User-Agent": "NogoomSportsBot/1.0",
-        "Accept": "application/json"
+    """Read the official FilGoal fixtures page and normalize its match cards."""
+    from html.parser import HTMLParser
+
+    class FilGoalParser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.tokens = []
+            self.anchor = None
+            self.heading = None
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag in ("h2", "h3", "h4", "h5"):
+                self.heading = ""
+            if tag == "a":
+                self.anchor = {"href": attrs.get("href", ""), "text": ""}
+        def handle_endtag(self, tag):
+            if tag == "a" and self.anchor is not None:
+                self.tokens.append(("a", self.anchor["href"], self.anchor["text"].strip()))
+                self.anchor = None
+            if tag in ("h2", "h3", "h4", "h5") and self.heading is not None:
+                value = self.heading.strip()
+                if value:
+                    self.tokens.append(("h", value))
+                self.heading = None
+        def handle_data(self, data):
+            value = " ".join(data.split())
+            if not value:
+                return
+            if self.anchor is not None:
+                self.anchor["text"] += " " + value
+            if self.heading is not None:
+                self.heading += " " + value
+            self.tokens.append(("t", value))
+
+    request = Request("https://www.filgoal.com/matches", headers={
+        "User-Agent": "Mozilla/5.0 (compatible; NogoomSportsBot/1.0)",
+        "Accept": "text/html,application/xhtml+xml"
     })
 
     def load():
-        with urlopen(request, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with urlopen(request, timeout=20) as response:
+            return response.read().decode("utf-8", errors="replace")
 
-    return await asyncio.to_thread(load)
-
+    page = await asyncio.to_thread(load)
+    parser = FilGoalParser()
+    parser.feed(page)
+    tokens = parser.tokens
+    fixtures = []
+    seen = set()
+    heading = "مباريات كرة القدم"
+    for index, token in enumerate(tokens):
+        if token[0] == "h":
+            heading = token[1]
+            continue
+        if token[0] != "a" or not re.search(r"/matches/\d+", token[1] or ""):
+            continue
+        match_id = re.search(r"/matches/(\d+)", token[1]).group(1)
+        if match_id in seen:
+            continue
+        seen.add(match_id)
+        previous = next((tokens[j] for j in range(index - 1, max(-1, index - 9), -1)
+                         if tokens[j][0] == "a" and not re.search(r"/matches/\d+", tokens[j][1] or "")), None)
+        following = next((tokens[j] for j in range(index + 1, min(len(tokens), index + 10))
+                          if tokens[j][0] == "a" and not re.search(r"/matches/\d+", tokens[j][1] or "")), None)
+        if not previous or not following:
+            continue
+        home, away = previous[2], following[2]
+        if not home or not away or len(home) > 80 or len(away) > 80:
+            continue
+        nearby = " ".join(t[1] if t[0] == "t" else t[2] if t[0] == "a" else ""
+                          for t in tokens[index + 1:index + 18])
+        date_match = re.search(r"(\d{1,2})-(\d{1,2})-(\d{4})\s*-\s*(\d{1,2}):(\d{2})", nearby)
+        if not date_match:
+            continue
+        day, month, year, hour, minute = map(int, date_match.groups())
+        try:
+            kickoff = datetime(year, month, day, hour, minute, tzinfo=ZoneInfo("Africa/Cairo"))
+        except ValueError:
+            continue
+        if kickoff.date().isoformat() != date_key:
+            continue
+        status_text = token[2] or ""
+        score_match = re.search(r"(\d+)\s*[-:]\s*(\d+)", status_text)
+        if "انتهت" in status_text or "انتهى" in status_text:
+            status = "finished"
+        elif "مباشر" in status_text or "جارية" in status_text or "الشوط" in status_text:
+            status = "live"
+        else:
+            status = "scheduled"
+        fixtures.append({
+            "home": home, "away": away, "competition": heading,
+            "time": kickoff.isoformat(), "status": status,
+            "home_score": int(score_match.group(1)) if score_match else None,
+            "away_score": int(score_match.group(2)) if score_match else None
+        })
+    return fixtures
 
 def _pick_match_value(item, *keys):
     for key in keys:
@@ -360,7 +445,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         payload = await fetch_today_fixtures(date_key)
     except Exception:
-        log.exception("Could not fetch today's fixtures from SportScore")
+        log.exception("Could not fetch today's fixtures from FilGoal")
         await q.message.reply_text("تعذر تحميل المباريات حاليًا. جرّب تاني بعد شوية.")
         return
 
@@ -377,7 +462,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         matches = None
 
     if not isinstance(matches, list):
-        log.error("Unexpected SportScore response format: %s", type(payload).__name__)
+        log.error("Unexpected FilGoal response format: %s", type(payload).__name__)
         await q.message.reply_text("مصدر المباريات رجّع بيانات غير متوقعة. هنعالج المشكلة.")
         return
 
