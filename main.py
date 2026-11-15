@@ -483,7 +483,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not fixtures:
         await q.message.reply_text(
-            f"⚽ مفيش مباريات مسجلة اليوم.\\n📆 {today.strftime('%d/%m/%Y')}"
+            f"⚽ مفيش مباريات مسجلة اليوم.\n📆 {today.strftime('%d/%m/%Y')}"
         )
         return
 
@@ -497,7 +497,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📌 {status_text}",
             ""
         ])
-    await q.message.reply_text("\\n".join(lines))
+    await q.message.reply_text("\n".join(lines))
 
 def _extract_fixtures(payload):
     if isinstance(payload, list):
