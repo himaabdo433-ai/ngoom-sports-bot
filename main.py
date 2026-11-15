@@ -1159,7 +1159,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👥 عدد الأصدقاء الجدد: {count}\n"
             f"⭐ الأسابيع المجانية التي حصلت عليها: {rewarded}\n"
             f"🎯 يتبقى {remaining} أصدقاء للحصول على أسبوع مجاني جديد.\n\n"
-            "كل 10 أعضاء جدد من رابطك = أسبوع مجاني يُضاف تلقائيًا.\n\n"\n            "شارك رابطك الخاص مع أصدقائك:\n" + invite_link
+            "كل 10 أعضاء جدد من رابطك = أسبوع مجاني يُضاف تلقائيًا.\n\n"
+            "شارك رابطك الخاص مع أصدقائك:\n" + invite_link
         )
         return
     if data == "bot_stats":
