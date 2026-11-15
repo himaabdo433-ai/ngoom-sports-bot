@@ -66,6 +66,13 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             event_type TEXT NOT NULL, event_key TEXT, created_at TEXT NOT NULL
         )""")
+        con.execute("""CREATE TABLE IF NOT EXISTS referrals (
+            referred_id INTEGER PRIMARY KEY, referrer_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        con.execute("""CREATE TABLE IF NOT EXISTS referral_rewards (
+            user_id INTEGER PRIMARY KEY, rewarded_milestones INTEGER NOT NULL DEFAULT 0
+        )""")
         con.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_created ON bot_events(created_at)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_key ON bot_events(event_key)")
         con.execute("CREATE TABLE IF NOT EXISTS daily_posts (post_date TEXT PRIMARY KEY, message_id INTEGER)")
@@ -269,6 +276,7 @@ def home_keyboard(user_id=None):
         [InlineKeyboardButton("🎯 سجل توقعاتك", callback_data="predictions")],
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
+        [InlineKeyboardButton("🎁 ادعُ أصدقاءك واكسب أسبوعًا مجانيًا", callback_data="my_referrals")],
         [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")]
     ]
     if user_id in ADMIN_IDS:
@@ -276,14 +284,51 @@ def home_keyboard(user_id=None):
     return InlineKeyboardMarkup(rows)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_bot_event(update.effective_user, "start")
+    user = update.effective_user
+    with db() as con:
+        already_known = con.execute("SELECT 1 FROM bot_visitors WHERE user_id=?", (user.id,)).fetchone() is not None
+    if not already_known and context.args and context.args[0].startswith("ref_"):
+        try:
+            referrer_id = int(context.args[0][4:])
+        except ValueError:
+            referrer_id = 0
+        if referrer_id and referrer_id != user.id:
+            now = datetime.now(timezone.utc)
+            with db() as con:
+                con.execute("INSERT OR IGNORE INTO referrals(referred_id, referrer_id, created_at) VALUES(?,?,?)",
+                            (user.id, referrer_id, now.isoformat()))
+                if con.execute("SELECT changes()").fetchone()[0] == 1:
+                    count = con.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (referrer_id,)).fetchone()[0]
+                    con.execute("INSERT OR IGNORE INTO referral_rewards(user_id, rewarded_milestones) VALUES(?,0)", (referrer_id,))
+                    progress = con.execute("SELECT rewarded_milestones FROM referral_rewards WHERE user_id=?", (referrer_id,)).fetchone()
+                    milestones = count // 5
+                    if milestones > progress["rewarded_milestones"]:
+                        old = con.execute("SELECT expires_at FROM users WHERE user_id=?", (referrer_id,)).fetchone()
+                        start_at = now
+                        if old and old["expires_at"]:
+                            try:
+                                previous = datetime.fromisoformat(old["expires_at"])
+                                if previous > now:
+                                    start_at = previous
+                            except ValueError:
+                                pass
+                        expires = start_at + timedelta(days=7)
+                        con.execute("""INSERT INTO users(user_id, expires_at, updated_at) VALUES(?,?,?)
+                            ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at, updated_at=excluded.updated_at""",
+                            (referrer_id, expires.isoformat(), now.isoformat()))
+                        con.execute("UPDATE referral_rewards SET rewarded_milestones=? WHERE user_id=?",
+                                    (progress["rewarded_milestones"] + 1, referrer_id))
+                        try:
+                            await context.bot.send_message(referrer_id, "🎉 مبروك! وصل عدد أصدقائك المدعوين إلى 5 أعضاء جدد، وتم إضافة أسبوع مجاني إلى اشتراكك ⭐")
+                        except Exception:
+                            log.info("Could not notify referrer %s about free week", referrer_id)
+    track_bot_event(user, "start")
     msg = (
-        "أهلاً بيك في جروب نجوم الرياضة النخبة ⭐\n"
+        "أهلاً بيك في نجوم الرياضة النخبة ⭐\n"
         "أفضل وأقوى التوقعات الرياضية.\n\n"
         "تحب تشترك أسبوعي ولا شهري؟"
     )
-    await update.effective_message.reply_text(msg, reply_markup=home_keyboard(update.effective_user.id))
-
+    await update.effective_message.reply_text(msg, reply_markup=home_keyboard(user.id))
 
 async def fetch_today_fixtures(date_key):
     """Read the official FilGoal fixtures page and normalize its match cards."""
@@ -1102,6 +1147,21 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data or ""
     track_bot_event(q.from_user, "button", data)
+    if data == "my_referrals":
+        with db() as con:
+            count = con.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (q.from_user.id,)).fetchone()[0]
+            progress = con.execute("SELECT rewarded_milestones FROM referral_rewards WHERE user_id=?", (q.from_user.id,)).fetchone()
+            rewarded = progress["rewarded_milestones"] if progress else 0
+        remaining = max(0, (rewarded + 1) * 5 - count)
+        invite_link = f"https://t.me/ngoomredaabot?start=ref_{q.from_user.id}"
+        await q.message.reply_text(
+            "🎁 نظام دعوة الأصدقاء\n\n"
+            f"👥 عدد الأصدقاء الجدد: {count}\n"
+            f"⭐ الأسابيع المجانية التي حصلت عليها: {rewarded}\n"
+            f"🎯 يتبقى {remaining} أصدقاء للحصول على أسبوع مجاني جديد.\n\n"
+            "شارك رابطك الخاص مع أصدقائك:\n" + invite_link
+        )
+        return
     if data == "bot_stats":
         if q.from_user.id not in ADMIN_IDS:
             await q.message.reply_text("الخاصية دي للإدارة فقط.")
