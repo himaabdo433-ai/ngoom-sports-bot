@@ -277,7 +277,8 @@ def home_keyboard(user_id=None):
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
         [InlineKeyboardButton("👥 ادعُ 10 أصدقاء واكسب أسبوعًا مجانيًا", callback_data="my_referrals")],
-        [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")]
+        [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")],
+        [InlineKeyboardButton("📢 القناة الرئيسية | نجوم الرياضة", url="https://t.me/ngomreda")]
     ]
     if user_id in ADMIN_IDS:
         rows.append([InlineKeyboardButton("📊 إحصائيات البوت", callback_data="bot_stats")])
