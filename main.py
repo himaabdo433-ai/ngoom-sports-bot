@@ -763,6 +763,15 @@ async def send_capital_plan(query, context, mode):
 
 
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data and context.user_data.get("awaiting_channel_publish"):
+        text = (update.effective_message.text or "").strip()
+        if text.casefold() in ("إلغاء", "الغاء", "cancel"):
+            context.user_data.pop("awaiting_channel_publish", None)
+            await update.effective_message.reply_text("تم إلغاء تجهيز المنشور.")
+            return
+        context.user_data.pop("awaiting_channel_publish", None)
+        await prepare_channel_publish(update.effective_message, context, text=text)
+        return
     if context.user_data and context.user_data.get("awaiting_capital_amount"):
         await handle_capital_plan(update, context)
         return
@@ -1148,6 +1157,38 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data or ""
     track_bot_event(q.from_user, "button", data)
+    if data in ("channel_publish_confirm", "channel_publish_cancel"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        if data == "channel_publish_cancel":
+            context.user_data.pop("channel_publish_draft", None)
+            await q.message.reply_text("تم إلغاء نشر المنشور.")
+            return
+        draft = context.user_data.pop("channel_publish_draft", None)
+        channel_id = get_saved_channel_id()
+        if not draft or not channel_id:
+            await q.message.reply_text("مفيش منشور جاهز أو القناة مش محفوظة. ابدأ من /publish.")
+            return
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📩 اشترك الآن – ادخل البوت", url="https://t.me/ngoomredaabot")
+        ]])
+        try:
+            if draft.get("photo_id"):
+                await context.bot.send_photo(
+                    chat_id=channel_id, photo=draft["photo_id"],
+                    caption=draft.get("text") or None, reply_markup=keyboard
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=channel_id, text=draft["text"],
+                    reply_markup=keyboard, disable_web_page_preview=True
+                )
+            await q.message.reply_text("✅ تم نشر المنشور على القناة ومعاه زر دخول البوت.")
+        except Exception:
+            log.exception("Admin channel post failed")
+            await q.message.reply_text("❌ تعذر النشر. تأكد إن البوت أدمن في القناة وعنده صلاحية النشر.")
+        return
     if data == "my_referrals":
         with db() as con:
             count = con.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (q.from_user.id,)).fetchone()[0]
@@ -1350,6 +1391,16 @@ async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not message.photo:
         return
+    if context.user_data.get("awaiting_channel_publish"):
+        if not (message.caption or "").strip():
+            await message.reply_text("ابعت الصورة ومعاها نص المنشور في وصف الصورة، أو اكتب /publish من جديد.")
+            return
+        context.user_data.pop("awaiting_channel_publish", None)
+        await prepare_channel_publish(
+            message, context, photo_id=message.photo[-1].file_id,
+            text=message.caption.strip()
+        )
+        return
     # If /setgift CODE was sent first, pair that code with the next admin photo.
     pending_code = context.user_data.pop("pending_daily_gift_code", None)
     if pending_code:
@@ -1432,6 +1483,41 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log.exception("Could not send receipt to admin %s", admin_id)
     await update.effective_message.reply_text("وصل الإيصال للإدارة للمراجعة. هنبعتلك النتيجة هنا.")
 
+async def prepare_channel_publish(message, context, photo_id=None, text=None):
+    channel_id = get_saved_channel_id()
+    if not channel_id:
+        await message.reply_text("القناة مش محفوظة في البوت. ابعت رسالة مُعاد توجيهها من القناة للأدمن أولًا.")
+        return
+    if not (text or "").strip():
+        await message.reply_text("المنشور فاضي. ابدأ من /publish وابعت النص أو الصورة مع وصفها.")
+        return
+    context.user_data["channel_publish_draft"] = {"photo_id": photo_id, "text": text.strip()}
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ تأكيد النشر على القناة", callback_data="channel_publish_confirm"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="channel_publish_cancel")
+    ]])
+    await message.reply_text(
+        "راجع المنشور. عند التأكيد هينزل على القناة ومعاه زر «📩 اشترك الآن – ادخل البوت».\n\n"
+        + text.strip(),
+        reply_markup=keyboard,
+        disable_web_page_preview=True
+    )
+
+
+async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    context.user_data["awaiting_channel_publish"] = True
+    context.user_data.pop("awaiting_match_analysis", None)
+    context.user_data.pop("awaiting_capital_amount", None)
+    await update.effective_message.reply_text(
+        "تمام يا أدمن 👑 ابعت نص المنشور في رسالة، أو ابعت الصورة ومعاها النص في وصف الصورة.\n"
+        "هعرضه عليك للتأكيد، وبعدها ينزل على القناة ومعاه زر دخول البوت.\n"
+        "للإلغاء اكتب: إلغاء"
+    )
+
+
 async def setgift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
@@ -1507,6 +1593,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("setgift", setgift))
+    app.add_handler(CommandHandler("publish", publish_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_button))
     # Handle forwarded channel posts before generic text/photo handlers.
