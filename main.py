@@ -483,7 +483,7 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not fixtures:
         await q.message.reply_text(
-            f"⚽ مفيش مباريات مسجلة اليوم في في الجول.\\n📆 {today.strftime('%d/%m/%Y')}\\n\\nمصدر البيانات: في الجول | FilGoal"
+            f"⚽ مفيش مباريات مسجلة اليوم.\\n📆 {today.strftime('%d/%m/%Y')}"
         )
         return
 
