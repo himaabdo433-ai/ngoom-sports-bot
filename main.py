@@ -185,7 +185,7 @@ async def build_daily_matches_text():
             lines.extend([f"🏆 {competition}", f"⚽ {home} × {away}",
                           f"🕒 {kickoff.strftime('%I:%M %p')} بتوقيت مصر",
                           f"📌 {state}", ""])
-    lines.extend(["تابعوا نجوم الرياضة ⭐", "مصدر البيانات: في الجول | FilGoal"])
+    lines.append("تابعوا نجوم الرياضة ⭐")
     return "\n".join(lines)
 
 
@@ -497,7 +497,6 @@ async def matches_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📌 {status_text}",
             ""
         ])
-    lines.append("مصدر البيانات: في الجول | FilGoal")
     await q.message.reply_text("\\n".join(lines))
 
 def _extract_fixtures(payload):
