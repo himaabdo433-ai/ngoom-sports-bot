@@ -1230,6 +1230,27 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 code=excluded.code, photo_file_id=excluded.photo_file_id, caption=excluded.caption""",
                 (today, code, photo_id, caption))
         await q.message.reply_text("✅ تم حفظ صورة ونص هدية النهارده. الأعضاء هيستلموهم لما يضغطوا 🎁 الهدية اليومية.")
+
+        # Announce the newly saved gift in the main channel.
+        channel_id = get_saved_channel_id()
+        if channel_id:
+            try:
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🎁 احصل على الهدية من البوت", url="https://t.me/ngoomredaabot")
+                ]])
+                await context.bot.send_message(
+                    chat_id=channel_id,
+                    text="🎁✨ هدية جديدة نزلت دلوقتي على بوت نجوم الرياضة!\n\n"
+                         "⏳ ادخل البوت واضغط على «الهدية اليومية» علشان تحصل على هديتك.\n\n"
+                         "👑 نجوم الرياضة | ELITE PRO",
+                    reply_markup=keyboard
+                )
+                log.info("Daily gift announcement posted to channel %s", channel_id)
+            except Exception:
+                log.exception("Could not announce the new daily gift in the channel")
+                await q.message.reply_text("⚠️ الهدية اتحفظت، لكن إشعار القناة ما نزلش. راجع صلاحية البوت في القناة.")
+        else:
+            await q.message.reply_text("⚠️ الهدية اتحفظت، لكن القناة الرئيسية مش محفوظة في البوت.")
         return
     elif data == "daily_gift_cancel":
         context.user_data.pop("daily_gift_photo_id", None)
