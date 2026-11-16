@@ -1580,7 +1580,7 @@ async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAUL
         return
     save_channel_id(channel.id)
     log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
-    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ نشر إعلان قناة النخبة كل 5 ساعات.")
+    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح.")
 
 async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = update.channel_post
@@ -1589,7 +1589,7 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if CHANNEL_ID is None and get_saved_channel_id() is None:
         save_channel_id(post.chat_id)
         log.info("Detected and saved target channel ID: %s", post.chat_id)
-        if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
+    if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
         return
     try:
         chosen = random.sample(REACTIONS, k=random.randint(1, 3))
