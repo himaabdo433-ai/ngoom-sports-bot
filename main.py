@@ -1581,7 +1581,6 @@ async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAUL
     save_channel_id(channel.id)
     log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
     await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح. هبدأ نشر إعلان قناة النخبة كل 5 ساعات.")
-    asyncio.create_task(publish_elite_promo(context.application))
 
 async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = update.channel_post
@@ -1590,8 +1589,7 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if CHANNEL_ID is None and get_saved_channel_id() is None:
         save_channel_id(post.chat_id)
         log.info("Detected and saved target channel ID: %s", post.chat_id)
-        asyncio.create_task(publish_elite_promo(context.application))
-    if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
+        if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
         return
     try:
         chosen = random.sample(REACTIONS, k=random.randint(1, 3))
@@ -1627,7 +1625,6 @@ def main():
     async def post_init(application):
         application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
         application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
-        application.bot_data["elite_promo_task"] = asyncio.create_task(elite_promo_publisher(application))
     app.post_init = post_init
     log.info("Nogoom Sports bot is starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
