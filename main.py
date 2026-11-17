@@ -88,19 +88,35 @@ def init_db():
         con.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_unique
             ON predictions(user_id, match_date, home_team, away_team, market)""")
 
-def track_bot_event(user, event_type, event_key=None):
+def touch_bot_visitor(user):
+    """Update a user's last activity without inflating button or /start counters."""
     if not user:
         return
     now = datetime.now(timezone.utc).isoformat()
     with db() as con:
         con.execute("""INSERT INTO bot_visitors(user_id, username, full_name, first_seen, last_seen, start_count)
-            VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+            VALUES(?,?,?,?,?,0) ON CONFLICT(user_id) DO UPDATE SET
             username=excluded.username, full_name=excluded.full_name,
-            last_seen=excluded.last_seen,
-            start_count=bot_visitors.start_count + excluded.start_count""",
-            (user.id, user.username, user.full_name, now, now, 1 if event_type == "start" else 0))
+            last_seen=excluded.last_seen""",
+            (user.id, user.username, user.full_name, now, now))
+
+
+def track_bot_event(user, event_type, event_key=None):
+    if not user:
+        return
+    touch_bot_visitor(user)
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        if event_type == "start":
+            con.execute("UPDATE bot_visitors SET start_count=start_count+1 WHERE user_id=?", (user.id,))
         con.execute("INSERT INTO bot_events(user_id, event_type, event_key, created_at) VALUES(?,?,?,?)",
                     (user.id, event_type, event_key, now))
+
+
+async def track_private_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Runs after the command/receipt handlers so first-time referral detection remains intact.
+    if update.effective_user:
+        touch_bot_visitor(update.effective_user)
 
 
 def get_saved_channel_id():
@@ -1106,43 +1122,68 @@ async def show_prediction_history(query, context):
 
 async def show_bot_stats(message):
     now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(days=1)).isoformat()
     week_ago = (now - timedelta(days=7)).isoformat()
     with db() as con:
         total_users = con.execute("SELECT COUNT(*) n FROM bot_visitors").fetchone()["n"]
+        started_users = con.execute("SELECT COUNT(*) n FROM bot_visitors WHERE start_count > 0").fetchone()["n"]
         total_starts = con.execute("SELECT COALESCE(SUM(start_count),0) n FROM bot_visitors").fetchone()["n"]
+        active_day = con.execute("SELECT COUNT(*) n FROM bot_visitors WHERE last_seen >= ?", (day_ago,)).fetchone()["n"]
         active_week = con.execute("SELECT COUNT(*) n FROM bot_visitors WHERE last_seen >= ?", (week_ago,)).fetchone()["n"]
         total_clicks = con.execute("SELECT COUNT(*) n FROM bot_events WHERE event_type='button'").fetchone()["n"]
-        top_buttons = con.execute("""SELECT event_key, COUNT(*) n FROM bot_events
-            WHERE event_type='button' AND event_key IS NOT NULL AND event_key != 'bot_stats'
+        button_users = con.execute("SELECT COUNT(DISTINCT user_id) n FROM bot_events WHERE event_type='button'").fetchone()["n"]
+        top_buttons = con.execute("""SELECT event_key, COUNT(*) n, COUNT(DISTINCT user_id) users
+            FROM bot_events
+            WHERE event_type='button' AND event_key IS NOT NULL
+              AND event_key NOT IN ('bot_stats','channel_publish_confirm','channel_publish_cancel',
+                  'daily_gift_publish','daily_gift_cancel','gift_paid_publish','gift_paid_cancel')
+              AND event_key NOT LIKE 'approve:%' AND event_key NOT LIKE 'reject:%'
+              AND event_key NOT LIKE 'send_group_link:%'
             GROUP BY event_key ORDER BY n DESC LIMIT 5""").fetchall()
         active_subs = con.execute("SELECT COUNT(*) n FROM users WHERE expires_at > ?",
                                   (now.isoformat(),)).fetchone()["n"]
+        all_subscribers = con.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]
         pending_count = con.execute("SELECT COUNT(*) n FROM pending").fetchone()["n"]
+        pending_users = con.execute("SELECT COUNT(DISTINCT user_id) n FROM pending").fetchone()["n"]
     labels = {
-        "plan:weekly": "اشتراك أسبوعي", "plan:monthly": "اشتراك شهري",
-        "status": "حالة الاشتراك", "matches_today": "مباريات اليوم",
-        "ask_match": "اسأل عن مباراة", "predictions": "سجل توقعاتك",
-        "pred_history": "سجل التوقعات", "capital_manager": "إدارة رأس المال",
-        "daily_gift": "الهدية اليومية"
+        "plan:weekly": "اختيار اشتراك أسبوعي", "plan:monthly": "اختيار اشتراك شهري",
+        "plan:weekly_eg": "دفع أسبوعي – فودافون كاش", "plan:weekly_usdt": "دفع أسبوعي – USDT",
+        "plan:monthly_eg": "دفع شهري – فودافون كاش", "plan:monthly_usdt": "دفع شهري – USDT",
+        "plan:three_days": "اختيار اشتراك 3 أيام", "plan:three_days_eg": "3 أيام – فودافون كاش",
+        "plan:three_days_usdt": "3 أيام – USDT", "status": "حالة الاشتراك",
+        "matches_today": "مباريات اليوم", "ask_match": "اسأل عن مباراة",
+        "predictions": "سجل توقعاتك", "pred_history": "سجل التوقعات",
+        "capital_manager": "إدارة رأس المال", "daily_gift": "الهدية اليومية",
+        "my_referrals": "دعوة الأصدقاء"
     }
     lines = [
         "📊 إحصائيات بوت نجوم الرياضة",
         "",
-        f"👥 إجمالي المستخدمين المسجلين: {total_users}",
-        f"🚀 مرات الضغط على /start: {total_starts}",
-        f"🟢 المستخدمون النشطون آخر 7 أيام: {active_week}",
+        f"👥 إجمالي الحسابات التي تفاعلت مع البوت: {total_users}",
+        f"🚀 حسابات بدأت البوت مرة واحدة على الأقل: {started_users}",
+        f"🔁 إجمالي مرات استخدام /start: {total_starts}",
+        f"🟢 مستخدمون نشطون آخر 24 ساعة: {active_day}",
+        f"📅 مستخدمون نشطون آخر 7 أيام: {active_week}",
         f"🖱️ إجمالي ضغطات الأزرار: {total_clicks}",
-        f"💎 الاشتراكات النشطة: {active_subs}",
-        f"⏳ طلبات الاشتراك قيد المراجعة: {pending_count}",
+        f"👤 عدد المستخدمين الذين ضغطوا أزرارًا: {button_users}",
+        f"💎 الاشتراكات النشطة حاليًا: {active_subs}",
+        f"📚 حسابات لها سجل اشتراك: {all_subscribers}",
+        f"⏳ طلبات الدفع المعلقة: {pending_count} طلب من {pending_users} مستخدم",
         "",
-        "🔥 أكثر الأزرار استخدامًا:"
+        "🔥 أكثر وظائف البوت استخدامًا:"
     ]
     if top_buttons:
-        lines.extend([f"{i}. {labels.get(row['event_key'], row['event_key'])}: {row['n']} ضغطة"
-                      for i, row in enumerate(top_buttons, 1)])
+        lines.extend([
+            f"{i}. {labels.get(row['event_key'], row['event_key'])}: {row['n']} ضغطة من {row['users']} مستخدم"
+            for i, row in enumerate(top_buttons, 1)
+        ])
     else:
         lines.append("لسه مفيش ضغطات مسجلة.")
-    lines.extend(["", "📌 الإحصائيات بدأت تتسجل من وقت تفعيل الميزة، ومش بتشمل الزيارات القديمة."])
+    lines.extend([
+        "",
+        "📌 النشاط بيتحسب من رسائل المستخدمين الخاصة وأزرار البوت، من وقت تشغيل التحديث الجديد.",
+        "📌 البيانات القديمة اللي ما اتسجلتش قبل كده مش ممكن نرجعها بأثر رجعي."
+    ])
     await message.reply_text("\n".join(lines))
 
 
@@ -1686,6 +1727,8 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, gift_paid_photo), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt), group=1)
+    # Record all private user messages after the main handlers have processed them.
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE, track_private_activity), group=2)
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
 
     async def post_init(application):
