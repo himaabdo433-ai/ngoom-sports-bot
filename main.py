@@ -270,6 +270,7 @@ def home_keyboard(user_id=None):
     rows = [
         [InlineKeyboardButton("اشتراك أسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
+        [InlineKeyboardButton("🔥 اشتراك 3 أيام", callback_data="plan:three_days")],
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
@@ -1296,16 +1297,37 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("gift_paid_photo_id", None)
         await q.message.reply_text("تم إلغاء نشر إعلان الجائزة.")
         return
+    if data == "plan:three_days":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🇪🇬 داخل مصر – 100 جنيه", callback_data="plan:three_days_eg")],
+            [InlineKeyboardButton("🌍 خارج مصر – 2 USDT", callback_data="plan:three_days_usdt")]
+        ])
+        await q.message.reply_text(
+            "اختر طريقة الدفع المناسبة لاشتراك 3 أيام:",
+            reply_markup=keyboard
+        )
+        return
     if data.startswith("plan:"):
         plan = data.split(":", 1)[1]
         if plan == "weekly":
             amount, label = WEEKLY_PRICE, "أسبوعي"
-        else:
+            payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}"
+        elif plan == "monthly":
             amount, label = MONTHLY_PRICE, "شهري"
+            payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}"
+        elif plan == "three_days_eg":
+            amount, label = "100 جنيه", "3 أيام – داخل مصر"
+            payment_text = "حوّل 100 جنيه على فودافون كاش: 01277598981"
+        elif plan == "three_days_usdt":
+            amount, label = "2 USDT", "3 أيام – خارج مصر"
+            payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+        else:
+            await q.message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
+            return
         context.user_data["pending_plan"] = plan
         await q.message.reply_text(
-            f"اخترت الاشتراك {label}.\nقيمة الاشتراك: {amount} جنيه.\n\n"
-            f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}\n"
+            f"اخترت اشتراك {label}.\nقيمة الاشتراك: {amount}.\n\n"
+            f"{payment_text}\n"
             "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة."
         )
     elif data == "predictions":
@@ -1381,7 +1403,12 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.message.reply_text("الطلب غير موجود أو تم التعامل معه.")
                 return
             if action == "approve":
-                days = 7 if row["plan"] == "weekly" else 30
+                if row["plan"] in ("three_days_eg", "three_days_usdt"):
+                    days = 3
+                elif row["plan"] == "weekly":
+                    days = 7
+                else:
+                    days = 30
                 now = datetime.now(timezone.utc)
                 old = con.execute("SELECT expires_at FROM users WHERE user_id=?", (row["user_id"],)).fetchone()
                 start_at = now
@@ -1470,7 +1497,21 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("اختار نوع الاشتراك الأول من /start.")
         return
     user = update.effective_user
-    amount = WEEKLY_PRICE if plan == "weekly" else MONTHLY_PRICE
+    if plan == "weekly":
+        amount = f"{WEEKLY_PRICE} جنيه"
+        plan_label = "أسبوعي"
+    elif plan == "monthly":
+        amount = f"{MONTHLY_PRICE} جنيه"
+        plan_label = "شهري"
+    elif plan == "three_days_eg":
+        amount = "100 جنيه"
+        plan_label = "3 أيام – داخل مصر"
+    elif plan == "three_days_usdt":
+        amount = "2 USDT"
+        plan_label = "3 أيام – خارج مصر"
+    else:
+        await update.effective_message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
+        return
     with db() as con:
         cur = con.execute(
             "INSERT INTO pending(user_id, plan, amount, created_at) VALUES(?,?,?,?)",
@@ -1482,8 +1523,8 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"طلب اشتراك جديد رقم #{pending_id}\n"
         f"الاسم: {user.full_name}\n"
         f"المستخدم: @{user.username or 'بدون'}\n"
-        f"الخطة: {'أسبوعي' if plan == 'weekly' else 'شهري'}\n"
-        f"المبلغ: {amount} جنيه"
+        f"الخطة: {plan_label}\n"
+        f"المبلغ: {amount}"
     )
     keyboard = InlineKeyboardMarkup([
         [
