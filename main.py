@@ -1297,6 +1297,19 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("gift_paid_photo_id", None)
         await q.message.reply_text("تم إلغاء نشر إعلان الجائزة.")
         return
+    if data in ("plan:weekly", "plan:monthly"):
+        plan = data.split(":", 1)[1]
+        duration_label = "الأسبوعي" if plan == "weekly" else "الشهري"
+        usd_amount = "4 USDT" if plan == "weekly" else "10 USDT"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"🇪🇬 داخل مصر – {'200' if plan == 'weekly' else '500'} جنيه", callback_data=f"plan:{plan}_eg")],
+            [InlineKeyboardButton(f"🌍 خارج مصر – {usd_amount}", callback_data=f"plan:{plan}_usdt")]
+        ])
+        await q.message.reply_text(
+            f"اختر طريقة الدفع المناسبة للاشتراك {duration_label}:",
+            reply_markup=keyboard
+        )
+        return
     if data == "plan:three_days":
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🇪🇬 داخل مصر – 100 جنيه", callback_data="plan:three_days_eg")],
@@ -1309,12 +1322,18 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data.startswith("plan:"):
         plan = data.split(":", 1)[1]
-        if plan == "weekly":
-            amount, label = WEEKLY_PRICE, "أسبوعي"
+        if plan == "weekly_eg":
+            amount, label = f"{WEEKLY_PRICE} جنيه", "أسبوعي – داخل مصر"
             payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}"
-        elif plan == "monthly":
-            amount, label = MONTHLY_PRICE, "شهري"
+        elif plan == "weekly_usdt":
+            amount, label = "4 USDT", "أسبوعي – خارج مصر"
+            payment_text = "حوّل 4 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+        elif plan == "monthly_eg":
+            amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
             payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER}"
+        elif plan == "monthly_usdt":
+            amount, label = "10 USDT", "شهري – خارج مصر"
+            payment_text = "حوّل 10 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "three_days_eg":
             amount, label = "100 جنيه", "3 أيام – داخل مصر"
             payment_text = "حوّل 100 جنيه على فودافون كاش: 01277598981"
@@ -1405,7 +1424,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if action == "approve":
                 if row["plan"] in ("three_days_eg", "three_days_usdt"):
                     days = 3
-                elif row["plan"] == "weekly":
+                elif row["plan"] in ("weekly", "weekly_eg", "weekly_usdt"):
                     days = 7
                 else:
                     days = 30
@@ -1497,12 +1516,18 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("اختار نوع الاشتراك الأول من /start.")
         return
     user = update.effective_user
-    if plan == "weekly":
+    if plan in ("weekly", "weekly_eg"):
         amount = f"{WEEKLY_PRICE} جنيه"
-        plan_label = "أسبوعي"
-    elif plan == "monthly":
+        plan_label = "أسبوعي – داخل مصر"
+    elif plan == "weekly_usdt":
+        amount = "4 USDT"
+        plan_label = "أسبوعي – خارج مصر"
+    elif plan in ("monthly", "monthly_eg"):
         amount = f"{MONTHLY_PRICE} جنيه"
-        plan_label = "شهري"
+        plan_label = "شهري – داخل مصر"
+    elif plan == "monthly_usdt":
+        amount = "10 USDT"
+        plan_label = "شهري – خارج مصر"
     elif plan == "three_days_eg":
         amount = "100 جنيه"
         plan_label = "3 أيام – داخل مصر"
