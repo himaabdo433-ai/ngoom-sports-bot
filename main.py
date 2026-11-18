@@ -1365,13 +1365,13 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan = data.split(":", 1)[1]
         if plan == "weekly_eg":
             amount, label = f"{WEEKLY_PRICE} جنيه", "أسبوعي – داخل مصر"
-            payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER} أو 01277598981"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
         elif plan == "weekly_usdt":
             amount, label = "4 USDT", "أسبوعي – خارج مصر"
             payment_text = "حوّل 4 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "monthly_eg":
             amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
-            payment_text = f"حوّل المبلغ على فودافون كاش: {PAYMENT_NUMBER} أو 01277598981"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
         elif plan == "monthly_usdt":
             amount, label = "10 USDT", "شهري – خارج مصر"
             payment_text = "حوّل 10 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
@@ -1388,7 +1388,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(
             f"اخترت اشتراك {label}.\nقيمة الاشتراك: {amount}.\n\n"
             f"{payment_text}\n"
-            "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة."
+            "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML"
         )
     elif data == "predictions":
         await begin_predictions(q, context)
