@@ -30,8 +30,8 @@ ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "6809336258,68344978
 PAYMENT_NUMBER = os.getenv("PAYMENT_NUMBER", "01024689530")
 CHANNEL_ID_RAW = os.getenv("CHANNEL_ID", "").strip()
 CHANNEL_ID = int(CHANNEL_ID_RAW) if CHANNEL_ID_RAW else None
-WEEKLY_PRICE = os.getenv("WEEKLY_PRICE", "200")
-MONTHLY_PRICE = os.getenv("MONTHLY_PRICE", "500")
+WEEKLY_PRICE = os.getenv("WEEKLY_PRICE", "150")
+MONTHLY_PRICE = os.getenv("MONTHLY_PRICE", "400")
 DB_PATH = os.getenv("DB_PATH", "bot.sqlite3")
 
 REACTIONS = ["🔥", "❤️", "👏", "⚽", "😍", "👍"]
@@ -286,7 +286,6 @@ def home_keyboard(user_id=None):
     rows = [
         [InlineKeyboardButton("اشتراك أسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
-        [InlineKeyboardButton("🔥 اشتراك 3 أيام", callback_data="plan:three_days")],
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
@@ -1375,9 +1374,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ("plan:weekly", "plan:monthly"):
         plan = data.split(":", 1)[1]
         duration_label = "الأسبوعي" if plan == "weekly" else "الشهري"
-        usd_amount = "4 USDT" if plan == "weekly" else "10 USDT"
+        usd_amount = "3 USD" if plan == "weekly" else "8 USD"
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🇪🇬 داخل مصر – {'200' if plan == 'weekly' else '500'} جنيه", callback_data=f"plan:{plan}_eg")],
+            [InlineKeyboardButton(f"🇪🇬 داخل مصر – {'150' if plan == 'weekly' else '400'} جنيه", callback_data=f"plan:{plan}_eg")],
             [InlineKeyboardButton(f"🌍 خارج مصر – {usd_amount}", callback_data=f"plan:{plan}_usdt")]
         ])
         await q.message.reply_text(
@@ -1401,14 +1400,14 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount, label = f"{WEEKLY_PRICE} جنيه", "أسبوعي – داخل مصر"
             payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
         elif plan == "weekly_usdt":
-            amount, label = "4 USDT", "أسبوعي – خارج مصر"
-            payment_text = "حوّل 4 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+            amount, label = "3 USD", "أسبوعي – خارج مصر"
+            payment_text = "حوّل 3 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "monthly_eg":
             amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
             payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
         elif plan == "monthly_usdt":
-            amount, label = "10 USDT", "شهري – خارج مصر"
-            payment_text = "حوّل 10 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+            amount, label = "8 USD", "شهري – خارج مصر"
+            payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "three_days_eg":
             amount, label = "100 جنيه", "3 أيام – داخل مصر"
             payment_text = "حوّل 100 جنيه على فودافون كاش: 01277598981"
@@ -1648,13 +1647,13 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = f"{WEEKLY_PRICE} جنيه"
         plan_label = "أسبوعي – داخل مصر"
     elif plan == "weekly_usdt":
-        amount = "4 USDT"
+        amount = "3 USD"
         plan_label = "أسبوعي – خارج مصر"
     elif plan in ("monthly", "monthly_eg"):
         amount = f"{MONTHLY_PRICE} جنيه"
         plan_label = "شهري – داخل مصر"
     elif plan == "monthly_usdt":
-        amount = "10 USDT"
+        amount = "8 USD"
         plan_label = "شهري – خارج مصر"
     elif plan == "three_days_eg":
         amount = "100 جنيه"
