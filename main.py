@@ -288,7 +288,6 @@ def home_keyboard(user_id=None):
          InlineKeyboardButton("👑 الاشتراك الشهري", callback_data="plan:monthly")],
         [InlineKeyboardButton("📋 حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("⚽ أبرز مباريات اليوم", callback_data="matches_today")],
-        [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🔄 برنامج استعادة التوازن", callback_data="recovery_start")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
         [InlineKeyboardButton("📩 التواصل مع الإدارة", url="https://t.me/ahmed_saber90")],
