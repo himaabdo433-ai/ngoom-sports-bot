@@ -286,6 +286,7 @@ def home_keyboard(user_id=None):
     rows = [
         [InlineKeyboardButton("💳 الاشتراك الأسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("👑 الاشتراك الشهري", callback_data="plan:monthly")],
+        [InlineKeyboardButton("⏳ اشتراك 3 أيام – 80 جنيه", callback_data="plan:three_days_eg")],
         [InlineKeyboardButton("📋 حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("⚽ أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🔄 برنامج استعادة التوازن", callback_data="recovery_start")],
@@ -1406,8 +1407,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount, label = "8 USD", "شهري – خارج مصر"
             payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "three_days_eg":
-            amount, label = "100 جنيه", "3 أيام – داخل مصر"
-            payment_text = "حوّل 100 جنيه على فودافون كاش: 01277598981"
+            amount, label = "80 جنيه", "3 أيام – داخل مصر"
+            payment_text = "حوّل 80 جنيه على فودافون كاش: 01277598981"
         elif plan == "three_days_usdt":
             amount, label = "2 USDT", "3 أيام – خارج مصر"
             payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
@@ -1653,7 +1654,7 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = "8 USD"
         plan_label = "شهري – خارج مصر"
     elif plan == "three_days_eg":
-        amount = "100 جنيه"
+        amount = "80 جنيه"
         plan_label = "3 أيام – داخل مصر"
     elif plan == "three_days_usdt":
         amount = "2 USDT"
