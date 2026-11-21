@@ -288,12 +288,9 @@ def home_keyboard(user_id=None):
          InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
         [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
-        [InlineKeyboardButton("🤖 اسأل عن مباراة", callback_data="ask_match")],
-        [InlineKeyboardButton("🎯 سجل توقعاتك", callback_data="predictions")],
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🔄 برنامج استعادة التوازن", callback_data="recovery_start")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
-        [InlineKeyboardButton("👥 ادعُ 10 أصدقاء واكسب أسبوعًا مجانيًا", callback_data="my_referrals")],
         [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")],
         [InlineKeyboardButton("📢 القناة الرئيسية | نجوم الرياضة", url="https://t.me/ngomreda")]
     ]
