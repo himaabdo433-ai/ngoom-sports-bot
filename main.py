@@ -783,78 +783,31 @@ async def send_capital_plan(query, context, mode):
 async def handle_recovery_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = (update.effective_message.text or "").strip()
     if raw.casefold() in ("إلغاء", "الغاء", "cancel", "خروج"):
-        for key in ("awaiting_recovery_amount", "recovery_step", "recovery_income",
-                    "recovery_expenses", "recovery_debts"):
+        for key in ("awaiting_recovery_amount", "recovery_step", "recovery_loss", "recovery_start_amount"):
             context.user_data.pop(key, None)
-        await update.effective_message.reply_text("تم إلغاء إعداد الميزانية.")
+        await update.effective_message.reply_text("تم إلغاء برنامج استعادة التوازن.")
         return
 
     digits = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
     normalized = raw.translate(digits).replace(",", "").replace("٬", "").replace(" ", "")
     if not re.fullmatch(r"\d{1,9}", normalized):
-        await update.effective_message.reply_text(
-            "اكتب رقمًا صحيحًا بالجنيه، من غير كسور أو رموز. واكتب (إلغاء) للخروج."
-        )
+        await update.effective_message.reply_text("اكتب مبلغًا صحيحًا بالجنيه. واكتب (إلغاء) للخروج.")
         return
     amount = int(normalized)
-    step = context.user_data.get("recovery_step")
-    if step == "income":
-        if amount < 1:
-            await update.effective_message.reply_text("اكتب دخلك الشهري بالجنيه كرقم أكبر من صفر.")
-            return
-        context.user_data["recovery_income"] = amount
-        context.user_data["recovery_step"] = "expenses"
-        await update.effective_message.reply_text(
-            "تمام. اكتب إجمالي مصروفاتك الأساسية الشهرية بالجنيه "
-            "(سكن، أكل، مواصلات، فواتير، علاج). لو مفيش اكتب 0."
-        )
+    if amount < 1:
+        await update.effective_message.reply_text("اكتب مبلغًا أكبر من صفر.")
         return
-    if step == "expenses":
-        context.user_data["recovery_expenses"] = amount
-        context.user_data["recovery_step"] = "debts"
-        await update.effective_message.reply_text(
-            "اكتب إجمالي أقساط الديون والالتزامات الشهرية بالجنيه. لو مفيش اكتب 0."
-        )
-        return
-    if step != "debts":
-        context.user_data.pop("awaiting_recovery_amount", None)
-        await update.effective_message.reply_text("ابدأ من جديد من زر برنامج استعادة التوازن.")
-        return
-
-    income = context.user_data.get("recovery_income", 0)
-    expenses = context.user_data.get("recovery_expenses", 0)
-    debts = amount
-    remaining = income - expenses - debts
-    suggested = max(0, (int(max(0, remaining) * 0.10) // 50) * 50)
-    for key in ("awaiting_recovery_amount", "recovery_step", "recovery_income",
-                "recovery_expenses", "recovery_debts"):
-        context.user_data.pop(key, None)
-
-    lines = [
-        "📊 ملخص تنظيم ميزانيتك الشهرية",
-        "",
-        f"💵 الدخل الشهري: {income:,} جنيه",
-        f"🏠 المصروفات الأساسية: {expenses:,} جنيه",
-        f"📌 أقساط والتزامات الديون: {debts:,} جنيه",
-        f"💰 المتبقي بعد الالتزامات: {remaining:,} جنيه",
-        ""
-    ]
-    if remaining <= 0:
-        lines.extend([
-            "⚠️ مصروفاتك والتزاماتك تساوي دخلك أو تتجاوزه.",
-            "الأولوية حاليًا لمراجعة المصروفات والديون، ولا تبدأ ادخارًا أو تستلف أو تحاول تعويض خسائر المراهنات."
-        ])
-    else:
-        lines.extend([
-            f"🎯 اقتراح ادخار مبدئي اختياري: حتى {suggested:,} جنيه شهريًا (حوالي 10% من المتبقي).",
-            "ابدأ بمبلغ أقل لو احتجت، واحتفظ بسيولة للطوارئ. الاقتراح تقديري ويتغير حسب ظروفك."
-        ])
-    lines.extend([
-        "",
-        "دي حسبة تنظيم ميزانية وليست استثمارًا أو ربحًا أو تعويضًا مضمونًا للخسائر.",
-        "ما تستخدمش فلوس الاحتياجات الأساسية أو الديون في المراهنات، والأفضل التوقف عن محاولة استرداد الخسارة بالمراهنة."
+    context.user_data["recovery_start_amount"] = amount
+    context.user_data.pop("awaiting_recovery_amount", None)
+    context.user_data.pop("recovery_step", None)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("شهر واحد", callback_data="recovery_period:1")],
+        [InlineKeyboardButton("شهران", callback_data="recovery_period:2")]
     ])
-    await update.effective_message.reply_text("\n".join(lines))
+    await update.effective_message.reply_text(
+        f"💵 مبلغ البداية المسجل: {amount:,} جنيه\n\nاختر مدة المتابعة:",
+        reply_markup=keyboard
+    )
 
 
 async def handle_match_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1487,16 +1440,54 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "ask_match":
         await begin_match_analysis(update, context)
     elif data == "recovery_start":
-        for key in ("awaiting_recovery_amount", "recovery_step", "recovery_income",
-                    "recovery_expenses", "recovery_debts"):
+        for key in ("awaiting_recovery_amount", "recovery_step", "recovery_loss", "recovery_start_amount"):
             context.user_data.pop(key, None)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("من 10,000 إلى 60,000 جنيه", callback_data="recovery_loss:1")],
+            [InlineKeyboardButton("من 70,000 إلى 120,000 جنيه", callback_data="recovery_loss:2")],
+            [InlineKeyboardButton("أكثر من 120,000 جنيه", callback_data="recovery_loss:3")]
+        ])
+        context.user_data["recovery_step"] = "loss"
+        await q.message.reply_text("🔄 برنامج استعادة التوازن\n\nاختار فئة مبلغ الخسارة:", reply_markup=keyboard)
+    elif data.startswith("recovery_loss:"):
+        loss = data.split(":", 1)[1]
+        labels = {"1": "من 10,000 إلى 60,000 جنيه", "2": "من 70,000 إلى 120,000 جنيه", "3": "أكثر من 120,000 جنيه"}
+        if loss not in labels:
+            await q.message.reply_text("اختيار غير صحيح. ابدأ من جديد.")
+            return
+        context.user_data["recovery_loss"] = labels[loss]
+        context.user_data["recovery_step"] = "bankroll"
         context.user_data["awaiting_recovery_amount"] = True
-        context.user_data["recovery_step"] = "income"
+        await q.message.reply_text("اكتب مبلغ البداية بالجنيه.")
+    elif data.startswith("recovery_period:"):
+        period = data.split(":", 1)[1]
+        if period not in ("1", "2") or not context.user_data.get("recovery_start_amount"):
+            await q.message.reply_text("ابدأ من جديد من زر برنامج استعادة التوازن.")
+            return
+        months = int(period)
+        price = months * 500
+        plan = f"recovery_{months}m"
+        context.user_data["pending_plan"] = plan
+        context.user_data["recovery_months"] = months
+        context.user_data["recovery_fee"] = price
         await q.message.reply_text(
-            "🔄 برنامج تنظيم واستعادة التوازن المالي\n\n"
-            "هنحسب ميزانيتك الشهرية بشكل بسيط، من غير وعود بتعويض خسائر أو أرباح مضمونة.\n"
-            "اكتب إجمالي دخلك الشهري بالجنيه.\n"
-            "مش هنطلب منك إيداع أموال أو زيادة المراهنات. اكتب (إلغاء) في أي وقت للخروج."
+            f"📋 ملخص طلب برنامج استعادة التوازن\n"
+            f"فئة الخسارة: {context.user_data.get('recovery_loss', 'غير محددة')}\n"
+            f"مبلغ البداية: {context.user_data['recovery_start_amount']:,} جنيه\n"
+            f"المدة: {months} {'شهر' if months == 1 else 'شهرين'}\n"
+            f"قيمة الخدمة: {price:,} جنيه\n\n"
+            "اضغط موافق للمتابعة. المتابعة لا تضمن الربح أو استرداد الخسائر، ورأس المال معرض للخسارة.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("موافق", callback_data="recovery_pay")]])
+        )
+    elif data == "recovery_pay":
+        plan = context.user_data.get("pending_plan")
+        if plan not in ("recovery_1m", "recovery_2m"):
+            await q.message.reply_text("ابدأ من جديد من زر برنامج استعادة التوازن.")
+            return
+        fee = context.user_data.get("recovery_fee", 500)
+        await q.message.reply_text(
+            f"قيمة الخدمة: {fee:,} جنيه.\n\nحوّل المبلغ على فودافون كاش:\n<code>01277598981</code>\n\nوبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML"
         )
     elif data == "capital_manager":
         await begin_capital_manager(update, context)
@@ -1561,6 +1552,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     days = 3
                 elif row["plan"] in ("weekly", "weekly_eg", "weekly_usdt"):
                     days = 7
+                elif row["plan"] == "recovery_2m":
+                    days = 60
                 else:
                     days = 30
                 now = datetime.now(timezone.utc)
@@ -1669,6 +1662,14 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif plan == "three_days_usdt":
         amount = "2 USDT"
         plan_label = "3 أيام – خارج مصر"
+    elif plan in ("recovery_1m", "recovery_2m"):
+        months = context.user_data.get("recovery_months", 1 if plan == "recovery_1m" else 2)
+        amount = f"{context.user_data.get('recovery_fee', months * 500)} جنيه"
+        plan_label = (
+            f"برنامج استعادة التوازن – {months} شهر – "
+            f"فئة الخسارة: {context.user_data.get('recovery_loss', 'غير محددة')} – "
+            f"مبلغ البداية: {context.user_data.get('recovery_start_amount', 0):,} جنيه"
+        )
     else:
         await update.effective_message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
         return
