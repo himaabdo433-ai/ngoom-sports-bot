@@ -284,15 +284,15 @@ async def elite_promo_publisher(app):
 
 def home_keyboard(user_id=None):
     rows = [
-        [InlineKeyboardButton("اشتراك أسبوعي", callback_data="plan:weekly"),
-         InlineKeyboardButton("اشتراك شهري", callback_data="plan:monthly")],
-        [InlineKeyboardButton("حالة اشتراكي", callback_data="status")],
-        [InlineKeyboardButton("📅 أبرز مباريات اليوم", callback_data="matches_today")],
+        [InlineKeyboardButton("💳 الاشتراك الأسبوعي", callback_data="plan:weekly"),
+         InlineKeyboardButton("👑 الاشتراك الشهري", callback_data="plan:monthly")],
+        [InlineKeyboardButton("📋 حالة اشتراكي", callback_data="status")],
+        [InlineKeyboardButton("⚽ أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("💰 إدارة رأس المال", callback_data="capital_manager")],
         [InlineKeyboardButton("🔄 برنامج استعادة التوازن", callback_data="recovery_start")],
         [InlineKeyboardButton("🎁 الهدية اليومية", callback_data="daily_gift")],
-        [InlineKeyboardButton("📩 تواصل مع الإدارة", url="https://t.me/ahmed_saber90")],
-        [InlineKeyboardButton("📢 القناة الرئيسية | نجوم الرياضة", url="https://t.me/ngomreda")]
+        [InlineKeyboardButton("📩 التواصل مع الإدارة", url="https://t.me/ahmed_saber90")],
+        [InlineKeyboardButton("📢 قناة نجوم الرياضة الرئيسية", url="https://t.me/ngomreda")]
     ]
     if user_id in ADMIN_IDS:
         rows.append([InlineKeyboardButton("📊 إحصائيات البوت", callback_data="bot_stats")])
@@ -339,9 +339,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             log.info("Could not notify referrer %s about free week", referrer_id)
     track_bot_event(user, "start")
     msg = (
-        "أهلاً بيك في نجوم الرياضة النخبة ⭐\n"
-        "أفضل وأقوى التوقعات الرياضية.\n\n"
-        "تحب تشترك أسبوعي ولا شهري؟"
+        "👑 أهلاً بيك في نجوم الرياضة | ELITE PRO ⭐\n\n"
+        "⚽ توقعات وتحليلات ومتابعة رياضية في مكان واحد.\n"
+        "📌 اختار الخدمة اللي محتاجها من القائمة بالأسفل.\n\n"
+        "نتمنى لك تجربة ممتعة ❤️"
     )
     await update.effective_message.reply_text(msg, reply_markup=home_keyboard(user.id))
 
