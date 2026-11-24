@@ -67,9 +67,57 @@ async function getMatches(date) {
   return data;
 }
 
-http.createServer(async (req, res) => {
+
+const newsCache = { at: 0, items: [] };
+function decodeXml(value) {
+  return String(value || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([\\da-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/\\s+/g, " ").trim();
+}
+function xmlTag(block, tag) {
+  const match = block.match(new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + tag + ">", "i"));
+  return match ? decodeXml(match[1]) : "";
+}
+async function getNews() {
+  if (newsCache.items.length && Date.now() - newsCache.at < 180000) return newsCache.items;
+  const queries = [
+    "site:yallakora.com كرة القدم",
+    "site:filgoal.com كرة القدم",
+    "أخبار كرة القدم مصر الأهلي الزمالك الدوري المصري"
+  ];
+  const feeds = await Promise.all(queries.map(async q => {
+    try {
+      const feedUrl = "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + "&hl=ar&gl=EG&ceid=EG:ar";
+      const response = await fetch(feedUrl, { headers: { "User-Agent": "Mozilla/5.0 NogoomSports/1.0", "Accept": "application/rss+xml, application/xml, text/xml" }, signal: AbortSignal.timeout(10000) });
+      if (!response.ok) return [];
+      const xml = await response.text();
+      return [...xml.matchAll(/<item(?:\\s[^>]*)?>([\\s\\S]*?)<\\/item>/gi)].map(match => {
+        const block = match[1];
+        const title = xmlTag(block, "title");
+        const link = xmlTag(block, "link");
+        const description = xmlTag(block, "description").replace(/\\s+/g, " ").slice(0, 220);
+        const pubDate = xmlTag(block, "pubDate");
+        const source = xmlTag(block, "source") || (link.includes("yallakora") ? "يلا كورة" : link.includes("filgoal") ? "في الجول" : "مصدر رياضي");
+        return { title, link, description, pubDate, source };
+      }).filter(item => item.title && item.link);
+    } catch (error) { return []; }
+  }));
+  const unique = new Map();
+  for (const item of feeds.flat()) {
+    const key = item.title.toLowerCase();
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  const items = [...unique.values()].sort((a,b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0)).slice(0, 24);
+  newsCache.at = Date.now();
+  newsCache.items = items;
+  return items;
+}
+\nhttp.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
-  if (url.pathname === "/api/matches") {
+  if (url.pathname === "/api/news") {\n    try { return json(res, 200, { items: await getNews(), source: "Google News RSS" }); }\n    catch (error) { return json(res, 502, { error: "تعذر جلب الأخبار حاليًا" }); }\n  }\n  if (url.pathname === "/api/matches") {
     const date = url.searchParams.get("date") || new Date().toISOString().slice(0,10).replace(/-/g,"");
     if (!/^\d{8}$/.test(date)) return json(res, 400, { error: "صيغة التاريخ غير صحيحة" });
     try {
