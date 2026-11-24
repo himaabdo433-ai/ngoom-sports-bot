@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090909">
+<title>نجوم الرياضة | كل الكورة في مكان واحد</title>
+<style>
+:root{--bg:#090909;--panel:#141414;--gold:#d8ad48;--gold2:#f3d78b;--muted:#aaa;--line:#292929;--green:#36c98b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% -10%,#33260d 0,transparent 35%),var(--bg);color:#f6f3eb;font-family:Tahoma,Arial,sans-serif;line-height:1.6}
+a{color:inherit;text-decoration:none}.wrap{width:min(1120px,92%);margin:auto}
+header{position:sticky;top:0;z-index:10;background:#090909ef;border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}
+.nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:20px}.logo{width:42px;height:42px;border:1px solid var(--gold);border-radius:13px;display:grid;place-items:center;color:var(--gold);font-size:23px;box-shadow:0 0 20px #d8ad4822}
+nav{display:flex;gap:24px;color:#ddd;font-size:14px}nav a:hover{color:var(--gold)}
+.actions{display:flex;gap:9px}.btn{border:1px solid var(--gold);padding:9px 15px;border-radius:10px;font-weight:700;font-size:13px}.btn.gold{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#17120a}
+.hero{padding:68px 0 42px;display:grid;grid-template-columns:1.25fr .75fr;gap:28px;align-items:center}
+.kicker{color:var(--gold);font-size:13px;font-weight:700;letter-spacing:.4px}.hero h1{font-size:clamp(34px,5vw,58px);line-height:1.2;margin:13px 0}.hero h1 span{color:var(--gold)}.hero p{color:#bbb;max-width:620px;margin:0 0 24px}
+.hero-card{background:linear-gradient(145deg,#211b0e,#111);border:1px solid #5a4720;border-radius:22px;padding:24px;min-height:250px;position:relative;overflow:hidden}
+.hero-card:after{content:"⚽";position:absolute;left:-10px;bottom:-48px;font-size:190px;opacity:.08}
+.hero-card .big{font-size:42px;font-weight:900;color:var(--gold);margin:8px 0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}.stat{background:#ffffff08;border:1px solid #ffffff12;padding:12px;border-radius:12px}.stat b{display:block;font-size:20px;color:var(--gold)}
+.section{padding:26px 0 38px}.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:17px}.section h2{margin:0;font-size:24px}.section-head p{color:var(--muted);font-size:13px;margin:4px 0 0}
+.pills{display:flex;gap:8px;overflow:auto;padding-bottom:12px}.pill{white-space:nowrap;background:var(--panel);border:1px solid var(--line);border-radius:30px;padding:8px 15px;color:#ccc;font-size:13px}.pill.active{background:#382b10;border-color:var(--gold);color:var(--gold2)}
+.matches{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.match{background:linear-gradient(120deg,#171717,#111);border:1px solid var(--line);border-radius:16px;padding:16px}.league{color:var(--muted);font-size:12px;display:flex;justify-content:space-between}.teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;text-align:center;gap:12px;padding:20px 0 12px}.team{font-weight:700}.crest{width:40px;height:40px;border-radius:50%;margin:0 auto 7px;background:#242424;display:grid;place-items:center;color:var(--gold);font-size:19px}.score{font-size:21px;font-weight:900;color:var(--gold)}.status{font-size:11px;color:var(--green)}
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.feature{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}.feature .ico{font-size:26px}.feature h3{margin:9px 0 5px;font-size:17px}.feature p{margin:0;color:var(--muted);font-size:13px}
+.pro{background:linear-gradient(120deg,#211a0b,#15120c);border:1px solid #715722;border-radius:20px;padding:26px;display:flex;align-items:center;justify-content:space-between;gap:20px}.pro h2{color:var(--gold2);margin:0 0 7px}.pro p{color:#c8c0ae;margin:0;font-size:14px}
+footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px;margin-top:30px}.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.notice{font-size:11px;color:#8f8f8f;margin-top:14px}
+@media(max-width:760px){nav{display:none}.hero{grid-template-columns:1fr;padding-top:42px}.hero-card{min-height:190px}.matches{grid-template-columns:1fr}.features{grid-template-columns:1fr}.pro{align-items:flex-start;flex-direction:column}.actions .btn:first-child{display:none}.section h2{font-size:21px}}
+</style>
+</head>
+<body>
+<header><div class="wrap nav">
+<a class="brand" href="#"><span class="logo">★</span><span>نجوم <span style="color:var(--gold)">الرياضة</span></span></a>
+<nav><a href="#matches">المباريات</a><a href="#features">الخدمات</a><a href="#elite">ELITE PRO</a></nav>
+<div class="actions"><a class="btn" href="#matches">تابع المباريات</a><a class="btn gold" href="#elite">اشترك الآن</a></div>
+</div></header>
+<main class="wrap">
+<section class="hero">
+<div><div class="kicker">منصة نجوم الرياضة</div><h1>كل تفاصيل الكرة<br><span>في مكان واحد</span></h1>
+<p>تابع المباريات والنتائج والأخبار والبطولات، واكتشف التحليلات والمحتوى الحصري لأعضاء ELITE PRO.</p>
+<a class="btn gold" href="#matches">اكتشف مباريات اليوم ←</a>
+<div class="stats"><div class="stat"><b>24/7</b><small>متابعة مستمرة</small></div><div class="stat"><b>كل البطولات</b><small>في مكان واحد</small></div><div class="stat"><b>ELITE</b><small>محتوى حصري</small></div></div>
+</div>
+<div class="hero-card"><div class="kicker">عالم الكرة بين إيديك</div><div class="big">NGOOM<br>SPORTS</div><div style="color:#c7b98f">الأخبار • النتائج • التحليلات</div></div>
+</section>
+<section class="section" id="matches">
+<div class="section-head"><div><h2>مباريات اليوم</h2><p>واجهة تجريبية — سيتم ربط النتائج الحقيقية لاحقًا</p></div><span class="kicker">LIVE CENTER</span></div>
+<div class="pills"><span class="pill active">الكل</span><span class="pill">الدوري الإنجليزي</span><span class="pill">الدوري الإسباني</span><span class="pill">دوري أبطال أوروبا</span><span class="pill">الدوري المصري</span></div>
+<div class="matches">
+<article class="match"><div class="league"><span>الدوري الإنجليزي</span><span>مثال تجريبي</span></div><div class="teams"><div class="team"><div class="crest">🔴</div>الفريق الأول</div><div class="score">VS</div><div class="team"><div class="crest">🔵</div>الفريق الثاني</div></div><div class="status">موعد المباراة يضاف عند ربط مصدر البيانات</div></article>
+<article class="match"><div class="league"><span>الدوري الإسباني</span><span>مثال تجريبي</span></div><div class="teams"><div class="team"><div class="crest">⚪</div>الفريق الثالث</div><div class="score">VS</div><div class="team"><div class="crest">🟡</div>الفريق الرابع</div></div><div class="status">موعد المباراة يضاف عند ربط مصدر البيانات</div></article>
+</div>
+<div class="notice">تنبيه: أسماء الفرق والبطاقات هنا للعرض التجريبي فقط وليست مباريات حقيقية أو نتائج مباشرة.</div>
+</section>
+<section class="section" id="features"><div class="section-head"><div><h2>كل اللي يهمك كرويًا</h2><p>أقسام المنصة الأساسية</p></div></div>
+<div class="features">
+<div class="feature"><div class="ico">⚽</div><h3>النتائج والمباريات</h3><p>مواعيد المباريات والنتائج وتفاصيل المواجهات.</p></div>
+<div class="feature"><div class="ico">🏆</div><h3>البطولات والترتيب</h3><p>جداول الدوريات وترتيب الفرق ومعلومات البطولات.</p></div>
+<div class="feature"><div class="ico">📰</div><h3>أخبار الكرة</h3><p>آخر الأخبار والتغطيات المهمة لعشاق كرة القدم.</p></div>
+</div></section>
+<section class="section" id="elite"><div class="pro"><div><div class="kicker">العضوية المميزة</div><h2>ELITE PRO</h2><p>تحليلات ومحتوى حصري وتوقعات للأعضاء — بدون وعود بأرباح مضمونة.</p></div><a class="btn gold" href="https://t.me/ngom2026" target="_blank" rel="noopener">تواصل واشترك</a></div></section>
+</main>
+<footer><div class="wrap foot"><span>© نجوم الرياضة — جميع الحقوق محفوظة</span><span>تصميم أسود وذهبي • نسخة تجريبية أولى</span></div></footer>
+</body></html>
