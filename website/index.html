@@ -75,6 +75,24 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
 <section class="section" id="elite"><div class="pro"><div><div class="kicker">العضوية المميزة</div><h2>ELITE PRO</h2><p>تحليلات ومحتوى حصري وتوقعات للأعضاء — بدون وعود بأرباح مضمونة.</p></div><a class="btn gold" href="https://t.me/ngom2026" target="_blank" rel="noopener">تواصل واشترك</a></div></section>
 </main>
 <footer><div class="wrap foot"><span>© نجوم الرياضة — جميع الحقوق محفوظة</span><span>تصميم أسود وذهبي • نسخة تجريبية أولى</span></div></footer>
+
+<script>
+(() => {
+ const list=document.getElementById("news-list"), filters=document.getElementById("news-filters"), note=document.getElementById("news-note");
+ if(!list||!filters||!note)return;
+ let items=[],selected="all";
+ const esc=v=>String(v||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ function render(){
+  const visible=items.filter(x=>selected==="all"||(selected==="yalla"?/يلا كورة|yallakora/i.test(x.source+" "+x.link):/في الجول|filgoal/i.test(x.source+" "+x.link)));
+  if(!visible.length){list.innerHTML='<article class="news-card">لا توجد أخبار متاحة في هذا التصنيف حاليًا.</article>';return;}
+  list.innerHTML=visible.map(x=>{const date=x.pubDate&&!isNaN(new Date(x.pubDate))?new Date(x.pubDate).toLocaleString("ar-EG",{dateStyle:"medium",timeStyle:"short"}):"";return '<a class="news-card" href="'+esc(x.link)+'" target="_blank" rel="noopener noreferrer"><span class="news-source">'+esc(x.source)+'</span><span class="news-title">'+esc(x.title)+'</span>'+(x.description?'<span class="news-desc">'+esc(x.description)+'</span>':'')+'<span class="news-meta">'+esc(date)+' · اقرأ الخبر من المصدر ←</span></a>';}).join("");
+ }
+ filters.addEventListener("click",e=>{const b=e.target.closest("button[data-news-filter]");if(!b)return;selected=b.dataset.newsFilter;filters.querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));render();});
+ async function loadNews(){try{const r=await fetch("/api/news",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);const data=await r.json();items=data.items||[];render();note.textContent=items.length?"آخر الأخبار من المصادر الرياضية العربية • تحديث تلقائي كل 3 دقائق. اضغط على الخبر لقراءة التفاصيل.":"المصدر لم يرجع أخبارًا حاليًا، حاول التحديث لاحقًا.";}catch(e){list.innerHTML='<article class="news-card">تعذر تحميل الأخبار الآن. حاول مرة أخرى بعد قليل.</article>';note.textContent="مشكلة مؤقتة في الاتصال بمصدر الأخبار.";}}
+ loadNews();setInterval(loadNews,180000);
+})();
+</script>
+
 <script>
 (() => {
   const list = document.getElementById("matches-list");
