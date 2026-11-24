@@ -1402,7 +1402,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             payment_text = "حوّل 3 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "monthly_eg":
             amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
-            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>"
         elif plan == "monthly_usdt":
             amount, label = "8 USD", "شهري – خارج مصر"
             payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
