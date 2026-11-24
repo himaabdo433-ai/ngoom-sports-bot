@@ -1197,7 +1197,8 @@ async def show_bot_stats(message):
         f"📅 مستخدمون نشطون آخر 7 أيام: {active_week}",
         f"🖱️ إجمالي ضغطات الأزرار: {total_clicks}",
         f"👤 عدد المستخدمين الذين ضغطوا أزرارًا: {button_users}",
-        f"💎 الاشتراكات النشطة حاليًا: {active_subs}",        f"📚 حسابات لها سجل اشتراك: {all_subscribers}",
+        f"💎 الاشتراكات النشطة حاليًا: {active_subs}",
+        f"📚 حسابات لها سجل اشتراك: {all_subscribers}",
         f"⏳ طلبات الدفع المعلقة: {pending_count} طلب من {pending_users} مستخدم",
         "",
         "🔥 أكثر وظائف البوت استخدامًا:"
@@ -1797,7 +1798,8 @@ async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_id=post.message_id,
             reaction=[ReactionTypeEmoji(emoji=e) for e in chosen],
             is_big=False
-        )    except Exception:
+        )
+    except Exception:
         log.exception("Could not react to channel post. Check bot admin permissions and Telegram reaction settings.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
