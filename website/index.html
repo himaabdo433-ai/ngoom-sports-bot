@@ -46,7 +46,7 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
 <div class="hero-card"><div class="kicker">عالم الكرة بين إيديك</div><div class="big">NGOOM<br>SPORTS</div><div style="color:#c7b98f">الأخبار • النتائج • التحليلات</div></div>
 </section>
 <section class="section" id="matches">
-<div class="section-head"><div><h2>مباريات اليوم</h2><p id="match-date">جاري تحميل المباريات...</p></div><span class="kicker">LIVE CENTER</span></div>
+<div class="section-head"><div><h2 id="matches-title">مباريات اليوم</h2><p id="match-date">جاري تحميل المباريات...</p></div><div style="display:flex;gap:8px;align-items:center"><button class="pill active" id="day-today" type="button">اليوم</button><button class="pill" id="day-tomorrow" type="button">غدًا</button><span class="kicker">LIVE CENTER</span></div></div>
 <div class="pills" id="league-filters"><button class="pill active" data-league="all">كل البطولات</button><button class="pill" data-league="eng.1">الإنجليزي</button><button class="pill" data-league="esp.1">الإسباني</button><button class="pill" data-league="ita.1">الإيطالي</button><button class="pill" data-league="ger.1">الألماني</button><button class="pill" data-league="fra.1">الفرنسي</button><button class="pill" data-league="uefa.champions">أبطال أوروبا</button><button class="pill" data-league="uefa.europa">الدوري الأوروبي</button></div>
 <div class="matches" id="matches-list" aria-live="polite"><div class="match">بنحمّل مباريات اليوم...</div></div>
 <div class="notice" id="matches-note">يتم تحديث البيانات تلقائيًا. مصدر البيانات: ESPN.</div>
@@ -69,8 +69,11 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
   let allMatches = [];
   let activeLeague = "all";
   const today = new Date();
-  const dateKey = today.getFullYear() + String(today.getMonth()+1).padStart(2,"0") + String(today.getDate()).padStart(2,"0");
-  dateLabel.textContent = "مباريات " + today.toLocaleDateString("ar-EG",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  let selectedOffset = 0;
+  let dateKey = makeDateKey(selectedOffset);
+  function makeDateKey(offset) { const d = new Date(today); d.setDate(d.getDate()+offset); return d.getFullYear() + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0"); }
+  function updateDateLabel() { const d = new Date(today); d.setDate(d.getDate()+selectedOffset); document.getElementById("matches-title").textContent = selectedOffset ? "مباريات الغد" : "مباريات اليوم"; dateLabel.textContent = d.toLocaleDateString("ar-EG",{weekday:"long",year:"numeric",month:"long",day:"numeric"}); document.getElementById("day-today").classList.toggle("active",selectedOffset===0); document.getElementById("day-tomorrow").classList.toggle("active",selectedOffset===1); }
+  updateDateLabel();
   function safe(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
   function render() {
     const matches = allMatches.filter(m => activeLeague === "all" || m.leagueCode === activeLeague);
@@ -95,6 +98,8 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
     filters.querySelectorAll(".pill").forEach(el => el.classList.toggle("active", el === button));
     render();
   });
+  document.getElementById("day-today").addEventListener("click", () => { selectedOffset=0; dateKey=makeDateKey(0); updateDateLabel(); loadMatches(); });
+  document.getElementById("day-tomorrow").addEventListener("click", () => { selectedOffset=1; dateKey=makeDateKey(1); updateDateLabel(); loadMatches(); });
   async function loadMatches() {
     try {
       const response = await fetch("/api/matches?date=" + dateKey, {cache:"no-store"});
