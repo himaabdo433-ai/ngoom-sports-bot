@@ -98,7 +98,7 @@ async function getNews() {
         const block = match[1];
         const title = xmlTag(block, "title");
         const link = xmlTag(block, "link");
-        const description = xmlTag(block, "description").replace(/\\s+/g, " ").slice(0, 220);
+        const description = xmlTag(block, "description").replace(/\s+/g, " ").slice(0, 220);
         const pubDate = xmlTag(block, "pubDate");
         const source = xmlTag(block, "source") || (link.includes("yallakora") ? "يلا كورة" : link.includes("filgoal") ? "في الجول" : "مصدر رياضي");
         return { title, link, description, pubDate, source };
