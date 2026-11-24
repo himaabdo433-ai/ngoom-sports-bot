@@ -1197,4 +1197,637 @@ async def show_bot_stats(message):
         f"📅 مستخدمون نشطون آخر 7 أيام: {active_week}",
         f"🖱️ إجمالي ضغطات الأزرار: {total_clicks}",
         f"👤 عدد المستخدمين الذين ضغطوا أزرارًا: {button_users}",
-        f"💎 الاشتراكات النشطة حاليًا: {active_subs}",
+        f"💎 الاشتراكات النشطة حاليًا: {active_subs}",        f"📚 حسابات لها سجل اشتراك: {all_subscribers}",
+        f"⏳ طلبات الدفع المعلقة: {pending_count} طلب من {pending_users} مستخدم",
+        "",
+        "🔥 أكثر وظائف البوت استخدامًا:"
+    ]
+    if top_buttons:
+        lines.extend([
+            f"{i}. {labels.get(row['event_key'], row['event_key'])}: {row['n']} ضغطة من {row['users']} مستخدم"
+            for i, row in enumerate(top_buttons, 1)
+        ])
+    else:
+        lines.append("لسه مفيش ضغطات مسجلة.")
+    lines.extend([
+        "",
+        "📌 النشاط بيتحسب من رسائل المستخدمين الخاصة وأزرار البوت، من وقت تشغيل التحديث الجديد.",
+        "📌 البيانات القديمة اللي ما اتسجلتش قبل كده مش ممكن نرجعها بأثر رجعي."
+    ])
+    await message.reply_text("\n".join(lines))
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الخاصية دي للإدارة فقط.")
+        return
+    await show_bot_stats(update.effective_message)
+
+
+async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    data = q.data or ""
+    track_bot_event(q.from_user, "button", data)
+    if data in ("channel_publish_confirm", "channel_publish_cancel"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        if data == "channel_publish_cancel":
+            context.user_data.pop("channel_publish_draft", None)
+            await q.message.reply_text("تم إلغاء نشر المنشور.")
+            return
+        draft = context.user_data.pop("channel_publish_draft", None)
+        channel_id = get_saved_channel_id()
+        if not draft or not channel_id:
+            await q.message.reply_text("مفيش منشور جاهز أو القناة مش محفوظة. ابدأ من /publish.")
+            return
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📩 اشترك الآن – ادخل البوت", url="https://t.me/ngoomredaabot")
+        ]])
+        try:
+            if draft.get("photo_id"):
+                await context.bot.send_photo(
+                    chat_id=channel_id, photo=draft["photo_id"],
+                    caption=draft.get("text") or None, reply_markup=keyboard
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=channel_id, text=draft["text"],
+                    reply_markup=keyboard, disable_web_page_preview=True
+                )
+            await q.message.reply_text("✅ تم نشر المنشور على القناة ومعاه زر دخول البوت.")
+        except Exception:
+            log.exception("Admin channel post failed")
+            await q.message.reply_text("❌ تعذر النشر. تأكد إن البوت أدمن في القناة وعنده صلاحية النشر.")
+        return
+    if data == "my_referrals":
+        with db() as con:
+            count = con.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (q.from_user.id,)).fetchone()[0]
+            progress = con.execute("SELECT rewarded_milestones FROM referral_rewards WHERE user_id=?", (q.from_user.id,)).fetchone()
+            rewarded = progress["rewarded_milestones"] if progress else 0
+        remaining = max(0, (rewarded + 1) * 10 - count)
+        invite_link = f"https://t.me/ngoomredaabot?start=ref_{q.from_user.id}"
+        await q.message.reply_text(
+            "👥 نظام دعوة الأصدقاء\n\n"
+            f"👥 عدد الأصدقاء الجدد: {count}\n"
+            f"⭐ الأسابيع المجانية التي حصلت عليها: {rewarded}\n"
+            f"🎯 يتبقى {remaining} أصدقاء للحصول على أسبوع مجاني جديد.\n\n"
+            "كل 10 أعضاء جدد من رابطك = أسبوع مجاني يُضاف تلقائيًا.\n\n"
+            "شارك رابطك الخاص مع أصدقائك:\n" + invite_link
+        )
+        return
+    if data == "bot_stats":
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        await show_bot_stats(q.message)
+        return
+    if data == "daily_gift_publish":
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        photo_id = context.user_data.pop("daily_gift_photo_id", None)
+        caption = context.user_data.pop("daily_gift_caption", None)
+        code = context.user_data.pop("daily_gift_code", None)
+        if not photo_id or not caption:
+            await q.message.reply_text("الصورة أو الكود مش موجودين. ابعت /setgift CODE وبعدها الصورة من جديد.")
+            return
+        if not code:
+            code = caption
+        today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
+        with db() as con:
+            con.execute("""INSERT INTO daily_gifts(gift_date, code, photo_file_id, caption)
+                VALUES(?,?,?,?) ON CONFLICT(gift_date) DO UPDATE SET
+                code=excluded.code, photo_file_id=excluded.photo_file_id, caption=excluded.caption""",
+                (today, code, photo_id, caption))
+        await q.message.reply_text("✅ تم حفظ صورة ونص هدية النهارده. الأعضاء هيستلموهم لما يضغطوا 🎁 الهدية اليومية.")
+
+        # Announce the newly saved gift in the main channel.
+        channel_id = get_saved_channel_id()
+        if channel_id:
+            try:
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🎁 احصل على الهدية من البوت", url="https://t.me/ngoomredaabot")
+                ]])
+                await context.bot.send_message(
+                    chat_id=channel_id,
+                    text="🎁✨ هدية جديدة نزلت دلوقتي على بوت نجوم الرياضة!\n\n"
+                         "⏳ ادخل البوت واضغط على «الهدية اليومية» علشان تحصل على هديتك.\n\n"
+                         "👑 نجوم الرياضة | ELITE PRO",
+                    reply_markup=keyboard
+                )
+                log.info("Daily gift announcement posted to channel %s", channel_id)
+            except Exception:
+                log.exception("Could not announce the new daily gift in the channel")
+                await q.message.reply_text("⚠️ الهدية اتحفظت، لكن إشعار القناة ما نزلش. راجع صلاحية البوت في القناة.")
+        else:
+            await q.message.reply_text("⚠️ الهدية اتحفظت، لكن القناة الرئيسية مش محفوظة في البوت.")
+        return
+    elif data == "daily_gift_cancel":
+        context.user_data.pop("daily_gift_photo_id", None)
+        context.user_data.pop("daily_gift_caption", None)
+        context.user_data.pop("daily_gift_code", None)
+        context.user_data.pop("pending_daily_gift_code", None)
+        await q.message.reply_text("تم إلغاء إعداد الهدية اليومية.")
+        return
+    if data == "gift_paid_publish":
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        photo_id = context.user_data.pop("gift_paid_photo_id", None)
+        channel_id = get_saved_channel_id()
+        if not photo_id:
+            await q.message.reply_text("مفيش صورة جاهزة للنشر. ابعت الصورة من جديد.")
+            return
+        if not channel_id:
+            await q.message.reply_text("القناة مش محفوظة في البوت. ابعت منشورًا مُعاد توجيهه من القناة للأدمن أولًا.")
+            return
+        caption = (
+            "🎉🏆 تم دفع جائزة كود الهدية بنجاح!\n\n"
+            "مبروك للفائزين ❤️\n\n"
+            "تابعونا باستمرار، فالهدايا والمفاجآت مستمرة مع نجوم الرياضة 👑\n\n"
+            "نجوم الرياضة | ELITE PRO"
+        )
+        try:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎁 ادخل بوت نجوم الرياضة", url="https://t.me/ngoomredaabot")
+            ]])
+            await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photo_id,
+                caption=caption,
+                reply_markup=keyboard
+            )
+            await q.message.reply_text("✅ تم نشر صورة إعلان دفع جائزة كود الهدية على القناة، ومعاها زر دخول البوت.")
+        except Exception:
+            log.exception("Could not publish gift-paid announcement")
+            await q.message.reply_text("تعذر نشر الصورة. تأكد إن البوت أدمن في القناة وعنده صلاحية النشر.")
+        return
+    elif data == "gift_paid_cancel":
+        context.user_data.pop("gift_paid_photo_id", None)
+        await q.message.reply_text("تم إلغاء نشر إعلان الجائزة.")
+        return
+    if data in ("plan:weekly", "plan:monthly"):
+        plan = data.split(":", 1)[1]
+        duration_label = "الأسبوعي" if plan == "weekly" else "الشهري"
+        usd_amount = "3 USD" if plan == "weekly" else "8 USD"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"🇪🇬 داخل مصر – {'150' if plan == 'weekly' else '400'} جنيه", callback_data=f"plan:{plan}_eg")],
+            [InlineKeyboardButton(f"🌍 خارج مصر – {usd_amount}", callback_data=f"plan:{plan}_usdt")]
+        ])
+        await q.message.reply_text(
+            f"اختر طريقة الدفع المناسبة للاشتراك {duration_label}:",
+            reply_markup=keyboard
+        )
+        return
+    if data == "plan:three_days":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🇪🇬 داخل مصر – 100 جنيه", callback_data="plan:three_days_eg")],
+            [InlineKeyboardButton("🌍 خارج مصر – 2 USDT", callback_data="plan:three_days_usdt")]
+        ])
+        await q.message.reply_text(
+            "اختر طريقة الدفع المناسبة لاشتراك 3 أيام:",
+            reply_markup=keyboard
+        )
+        return
+    if data.startswith("plan:"):
+        plan = data.split(":", 1)[1]
+        if plan == "weekly_eg":
+            amount, label = f"{WEEKLY_PRICE} جنيه", "أسبوعي – داخل مصر"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
+        elif plan == "weekly_usdt":
+            amount, label = "3 USD", "أسبوعي – خارج مصر"
+            payment_text = "حوّل 3 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+        elif plan == "monthly_eg":
+            amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
+        elif plan == "monthly_usdt":
+            amount, label = "8 USD", "شهري – خارج مصر"
+            payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+        elif plan == "three_days_eg":
+            amount, label = "80 جنيه", "3 أيام – داخل مصر"
+            payment_text = "حوّل 80 جنيه على فودافون كاش: 01277598981"
+        elif plan == "three_days_usdt":
+            amount, label = "2 USDT", "3 أيام – خارج مصر"
+            payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+        else:
+            await q.message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
+            return
+        context.user_data["pending_plan"] = plan
+        await q.message.reply_text(
+            f"اخترت اشتراك {label}.\nقيمة الاشتراك: {amount}.\n\n"
+            f"{payment_text}\n"
+            "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML"
+        )
+    elif data == "predictions":
+        await begin_predictions(q, context)
+    elif data.startswith("pred_match:"):
+        await show_prediction_markets(q, context, int(data.split(":", 1)[1]))
+    elif data.startswith("pred_market:"):
+        await show_prediction_choices(q, context, data.split(":", 1)[1])
+    elif data.startswith("pred_pick:"):
+        await save_prediction(q, context, data.split(":", 1)[1])
+    elif data == "pred_history":
+        await show_prediction_history(q, context)
+    elif data == "matches_today":
+        await matches_today(update, context)
+    elif data == "ask_match":
+        await begin_match_analysis(update, context)
+    elif data == "recovery_start":
+        for key in ("awaiting_recovery_amount", "recovery_step", "recovery_loss", "recovery_start_amount"):
+            context.user_data.pop(key, None)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("من 10,000 إلى 60,000 جنيه", callback_data="recovery_loss:1")],
+            [InlineKeyboardButton("من 70,000 إلى 120,000 جنيه", callback_data="recovery_loss:2")],
+            [InlineKeyboardButton("أكثر من 120,000 جنيه", callback_data="recovery_loss:3")]
+        ])
+        context.user_data["recovery_step"] = "loss"
+        await q.message.reply_text("🔄 برنامج استعادة التوازن\n\nاختار فئة مبلغ الخسارة:", reply_markup=keyboard)
+    elif data.startswith("recovery_loss:"):
+        loss = data.split(":", 1)[1]
+        labels = {"1": "من 10,000 إلى 60,000 جنيه", "2": "من 70,000 إلى 120,000 جنيه", "3": "أكثر من 120,000 جنيه"}
+        if loss not in labels:
+            await q.message.reply_text("اختيار غير صحيح. ابدأ من جديد.")
+            return
+        context.user_data["recovery_loss"] = labels[loss]
+        context.user_data["recovery_step"] = "bankroll"
+        context.user_data["awaiting_recovery_amount"] = True
+        await q.message.reply_text("اكتب مبلغ البداية بالجنيه.")
+    elif data.startswith("recovery_period:"):
+        period = data.split(":", 1)[1]
+        if period not in ("1", "2") or not context.user_data.get("recovery_start_amount"):
+            await q.message.reply_text("ابدأ من جديد من زر برنامج استعادة التوازن.")
+            return
+        months = int(period)
+        price = months * 500
+        plan = f"recovery_{months}m"
+        context.user_data["pending_plan"] = plan
+        context.user_data["recovery_months"] = months
+        context.user_data["recovery_fee"] = price
+        await q.message.reply_text(
+            f"📋 ملخص طلب برنامج استعادة التوازن\n"
+            f"فئة الخسارة: {context.user_data.get('recovery_loss', 'غير محددة')}\n"
+            f"مبلغ البداية: {context.user_data['recovery_start_amount']:,} جنيه\n"
+            f"المدة: {months} {'شهر' if months == 1 else 'شهرين'}\n"
+            f"قيمة الخدمة: {price:,} جنيه\n\n"
+            "اضغط موافق للمتابعة. المتابعة لا تضمن الربح أو استرداد الخسائر، ورأس المال معرض للخسارة.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("موافق", callback_data="recovery_pay")]])
+        )
+    elif data == "recovery_pay":
+        plan = context.user_data.get("pending_plan")
+        if plan not in ("recovery_1m", "recovery_2m"):
+            await q.message.reply_text("ابدأ من جديد من زر برنامج استعادة التوازن.")
+            return
+        fee = context.user_data.get("recovery_fee", 500)
+        await q.message.reply_text(
+            f"قيمة الخدمة: {fee:,} جنيه.\n\nحوّل المبلغ على فودافون كاش:\n<code>01277598981</code>\n\nوبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML"
+        )
+    elif data == "capital_manager":
+        await begin_capital_manager(update, context)
+    elif data.startswith("capital_mode:"):
+        await send_capital_plan(q, context, data.split(":", 1)[1])
+    elif data == "daily_gift":
+        today = datetime.now(ZoneInfo("Africa/Cairo")).date().isoformat()
+        with db() as con:
+            row = con.execute("SELECT code, photo_file_id, caption FROM daily_gifts WHERE gift_date=?", (today,)).fetchone()
+        if row:
+            if row["photo_file_id"]:
+                await q.message.reply_photo(photo=row["photo_file_id"], caption=row["caption"] or row["code"])
+            else:
+                await q.message.reply_text("🎁 كود هديتك اليومية:\\n" + row["code"])
+        else:
+            await q.message.reply_text("🎁 مفيش كود هدية متاح النهارده، تابعنا قريبًا.")
+    elif data == "status":
+        user_id = q.from_user.id
+        with db() as con:
+            row = con.execute("SELECT expires_at FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if row and row["expires_at"]:
+            try:
+                exp = datetime.fromisoformat(row["expires_at"])
+                if exp > datetime.now(timezone.utc):
+                    await q.message.reply_text("اشتراكك نشط حتى: " + exp.strftime("%Y-%m-%d %H:%M UTC"))
+                    return
+            except ValueError:
+                pass
+        await q.message.reply_text("مفيش اشتراك نشط حاليًا.", reply_markup=home_keyboard())
+    elif data.startswith("send_group_link:"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.message.reply_text("الخاصية دي للإدارة فقط.")
+            return
+        pending_id = int(data.split(":", 1)[1])
+        with db() as con:
+            row = con.execute("SELECT user_id FROM pending WHERE id=?", (pending_id,)).fetchone()
+        if not row:
+            await q.message.reply_text("طلب الاشتراك غير موجود أو تم التعامل معه بالفعل.")
+            return
+        try:
+            await context.bot.send_message(
+                chat_id=row["user_id"],
+                text="أهلاً بيك ❤️\nده لينك دخول جروب نجوم الرياضة النخبة:\nhttps://t.me/+ri52W-OfZks4NDE8\n\nنورتنا 👑"
+            )
+            await q.message.reply_text("✅ تم إرسال لينك الجروب للعضو في الخاص.")
+        except Exception:
+            log.exception("Could not send group invite link to user %s", row["user_id"])
+            await q.message.reply_text("❌ مقدرتش أبعتله اللينك. غالبًا العضو ما بدأش البوت أو عامل حظر. خليه يفتح البوت ويضغط Start الأول.")
+        return
+    elif data.startswith("approve:") or data.startswith("reject:"):
+        if q.from_user.id not in ADMIN_IDS:
+            return
+        action, raw_id = data.split(":", 1)
+        pending_id = int(raw_id)
+        with db() as con:
+            row = con.execute("SELECT * FROM pending WHERE id=?", (pending_id,)).fetchone()
+            if not row:
+                await q.message.reply_text("الطلب غير موجود أو تم التعامل معه.")
+                return
+            if action == "approve":
+                if row["plan"] in ("three_days_eg", "three_days_usdt"):
+                    days = 3
+                elif row["plan"] in ("weekly", "weekly_eg", "weekly_usdt"):
+                    days = 7
+                elif row["plan"] == "recovery_2m":
+                    days = 60
+                else:
+                    days = 30
+                now = datetime.now(timezone.utc)
+                old = con.execute("SELECT expires_at FROM users WHERE user_id=?", (row["user_id"],)).fetchone()
+                start_at = now
+                if old and old["expires_at"]:
+                    try:
+                        previous = datetime.fromisoformat(old["expires_at"])
+                        if previous > now:
+                            start_at = previous
+                    except ValueError:
+                        pass
+                expires = start_at + timedelta(days=days)
+                con.execute("""INSERT INTO users(user_id, expires_at, updated_at)
+                    VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                    expires_at=excluded.expires_at, updated_at=excluded.updated_at""",
+                    (row["user_id"], expires.isoformat(), now.isoformat()))
+                con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
+                await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐")
+                await q.message.reply_text("تم قبول الدفع وتفعيل الاشتراك.")
+            else:
+                con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
+                await context.bot.send_message(row["user_id"], "الإيصال لم يتم اعتماده. تواصل مع الإدارة للمراجعة.")
+                await q.message.reply_text("تم رفض الطلب.")
+
+async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user or user.id not in ADMIN_IDS:
+        return
+    if not message.photo:
+        return
+    if context.user_data.get("awaiting_channel_publish"):
+        if not (message.caption or "").strip():
+            await message.reply_text("ابعت الصورة ومعاها نص المنشور في وصف الصورة، أو اكتب /publish من جديد.")
+            return
+        context.user_data.pop("awaiting_channel_publish", None)
+        await prepare_channel_publish(
+            message, context, photo_id=message.photo[-1].file_id,
+            text=message.caption.strip()
+        )
+        return
+    # If /setgift CODE was sent first, pair that code with the next admin photo.
+    pending_code = context.user_data.pop("pending_daily_gift_code", None)
+    if pending_code:
+        context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
+        context.user_data["daily_gift_code"] = pending_code
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{pending_code}"
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
+            InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
+        ]])
+        await message.reply_text(
+            f"وصلت الصورة وكود الهدية ({pending_code}) يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
+            reply_markup=keyboard
+        )
+        return
+    # Also accept an image with its code written in the photo caption.
+    if message.caption and message.caption.strip():
+        context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
+        context.user_data["daily_gift_code"] = message.caption.strip()
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{message.caption.strip()}"
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
+            InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
+        ]])
+        await message.reply_text(
+            "وصلت صورة كود الهدية والنص يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
+            reply_markup=keyboard
+        )
+        return
+    context.user_data["gift_paid_photo_id"] = message.photo[-1].file_id
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ تأكيد النشر على القناة", callback_data="gift_paid_publish"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="gift_paid_cancel")
+    ]])
+    await message.reply_text(
+        "وصلت الصورة يا أدمن 👑\nراجعها، واضغط تأكيد النشر عشان أنزلها على قناة نجوم الرياضة بالنص المعتمد.",
+        reply_markup=keyboard
+    )
+
+
+async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user and update.effective_user.id in ADMIN_IDS:
+        return
+    plan = context.user_data.get("pending_plan")
+    if not plan:
+        await update.effective_message.reply_text("اختار نوع الاشتراك الأول من /start.")
+        return
+    user = update.effective_user
+    if plan in ("weekly", "weekly_eg"):
+        amount = f"{WEEKLY_PRICE} جنيه"
+        plan_label = "أسبوعي – داخل مصر"
+    elif plan == "weekly_usdt":
+        amount = "3 USD"
+        plan_label = "أسبوعي – خارج مصر"
+    elif plan in ("monthly", "monthly_eg"):
+        amount = f"{MONTHLY_PRICE} جنيه"
+        plan_label = "شهري – داخل مصر"
+    elif plan == "monthly_usdt":
+        amount = "8 USD"
+        plan_label = "شهري – خارج مصر"
+    elif plan == "three_days_eg":
+        amount = "80 جنيه"
+        plan_label = "3 أيام – داخل مصر"
+    elif plan == "three_days_usdt":
+        amount = "2 USDT"
+        plan_label = "3 أيام – خارج مصر"
+    elif plan in ("recovery_1m", "recovery_2m"):
+        months = context.user_data.get("recovery_months", 1 if plan == "recovery_1m" else 2)
+        amount = f"{context.user_data.get('recovery_fee', months * 500)} جنيه"
+        plan_label = (
+            f"برنامج استعادة التوازن – {months} شهر – "
+            f"فئة الخسارة: {context.user_data.get('recovery_loss', 'غير محددة')} – "
+            f"مبلغ البداية: {context.user_data.get('recovery_start_amount', 0):,} جنيه"
+        )
+    else:
+        await update.effective_message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
+        return
+    with db() as con:
+        cur = con.execute(
+            "INSERT INTO pending(user_id, plan, amount, created_at) VALUES(?,?,?,?)",
+            (user.id, plan, amount, datetime.now(timezone.utc).isoformat())
+        )
+        pending_id = cur.lastrowid
+    context.user_data.pop("pending_plan", None)
+    caption = (
+        f"طلب اشتراك جديد رقم #{pending_id}\n"
+        f"الاسم: {user.full_name}\n"
+        f"المستخدم: @{user.username or 'بدون'}\n"
+        f"الخطة: {plan_label}\n"
+        f"المبلغ: {amount}"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("قبول وتفعيل", callback_data=f"approve:{pending_id}"),
+            InlineKeyboardButton("رفض", callback_data=f"reject:{pending_id}")
+        ],
+        [InlineKeyboardButton("📩 إرسال لينك الجروب", callback_data=f"send_group_link:{pending_id}")],
+        [InlineKeyboardButton("👤 التواصل مع صاحب الطلب", url=(f"https://t.me/{user.username}" if user.username else f"tg://user?id={user.id}"))]
+    ])
+    for admin_id in ADMIN_IDS:
+        try:
+            if update.effective_message.photo:
+                await context.bot.send_photo(admin_id, update.effective_message.photo[-1].file_id,
+                                             caption=caption, reply_markup=keyboard)
+            else:
+                await context.bot.send_document(admin_id, update.effective_message.document.file_id,
+                                                caption=caption, reply_markup=keyboard)
+        except Exception:
+            log.exception("Could not send receipt to admin %s", admin_id)
+    await update.effective_message.reply_text("وصل الإيصال للإدارة للمراجعة. هنبعتلك النتيجة هنا.")
+
+async def prepare_channel_publish(message, context, photo_id=None, text=None):
+    channel_id = get_saved_channel_id()
+    if not channel_id:
+        await message.reply_text("القناة مش محفوظة في البوت. ابعت رسالة مُعاد توجيهها من القناة للأدمن أولًا.")
+        return
+    if not (text or "").strip():
+        await message.reply_text("المنشور فاضي. ابدأ من /publish وابعت النص أو الصورة مع وصفها.")
+        return
+    context.user_data["channel_publish_draft"] = {"photo_id": photo_id, "text": text.strip()}
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ تأكيد النشر على القناة", callback_data="channel_publish_confirm"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="channel_publish_cancel")
+    ]])
+    await message.reply_text(
+        "راجع المنشور. عند التأكيد هينزل على القناة ومعاه زر «📩 اشترك الآن – ادخل البوت».\n\n"
+        + text.strip(),
+        reply_markup=keyboard,
+        disable_web_page_preview=True
+    )
+
+
+async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    context.user_data["awaiting_channel_publish"] = True
+    context.user_data.pop("awaiting_match_analysis", None)
+    context.user_data.pop("awaiting_capital_amount", None)
+    await update.effective_message.reply_text(
+        "تمام يا أدمن 👑 ابعت نص المنشور في رسالة، أو ابعت الصورة ومعاها النص في وصف الصورة.\n"
+        "هعرضه عليك للتأكيد، وبعدها ينزل على القناة ومعاه زر دخول البوت.\n"
+        "للإلغاء اكتب: إلغاء"
+    )
+
+
+async def setgift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    if not context.args:
+        await update.effective_message.reply_text("استخدم الأمر كده:\n/setgift CODE\nوبعدها ابعت صورة الهدية.")
+        return
+    code = " ".join(context.args).strip()
+    context.user_data["pending_daily_gift_code"] = code
+    await update.effective_message.reply_text(
+        "تمام 👑 كود الهدية اتسجل مؤقتًا. ابعت صورة الهدية دلوقتي في رسالة منفصلة، "
+        "وهعرضهالك للتأكيد قبل الحفظ."
+    )
+
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    with db() as con:
+        pending_count = con.execute("SELECT COUNT(*) n FROM pending").fetchone()["n"]
+        active_count = con.execute(
+            "SELECT COUNT(*) n FROM users WHERE expires_at > ?",
+            (datetime.now(timezone.utc).isoformat(),)
+        ).fetchone()["n"]
+    await update.effective_message.reply_text(
+        f"لوحة الإدارة ⭐\nطلبات قيد المراجعة: {pending_count}\nاشتراكات نشطة: {active_count}"
+    )
+
+
+async def capture_forwarded_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user or user.id not in ADMIN_IDS:
+        return
+    origin = getattr(message, "forward_origin", None)
+    channel = getattr(origin, "chat", None) if origin else None
+    if not channel or getattr(origin, "type", None) != "channel":
+        await message.reply_text("ابعتلي رسالة مُعاد توجيهها من القناة نفسها، مش صورة أو نص منسوخ.")
+        return
+    save_channel_id(channel.id)
+    log.info("Target channel ID saved from admin forwarded post: %s", channel.id)
+    await message.reply_text("تمام ⭐ تم حفظ القناة بنجاح.")
+
+async def channel_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    post = update.channel_post
+    if not post:
+        return
+    if CHANNEL_ID is None and get_saved_channel_id() is None:
+        save_channel_id(post.chat_id)
+        log.info("Detected and saved target channel ID: %s", post.chat_id)
+    if get_saved_channel_id() is not None and post.chat_id != get_saved_channel_id():
+        return
+    try:
+        chosen = random.sample(REACTIONS, k=random.randint(1, 3))
+        await context.bot.set_message_reaction(
+            chat_id=post.chat_id,
+            message_id=post.message_id,
+            reaction=[ReactionTypeEmoji(emoji=e) for e in chosen],
+            is_big=False
+        )    except Exception:
+        log.exception("Could not react to channel post. Check bot admin permissions and Telegram reaction settings.")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text("للاشتراك استخدم /start، ولمراجعة اشتراكك اضغط حالة اشتراكي.")
+
+def main():
+    init_db()
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("setgift", setgift))
+    app.add_handler(CommandHandler("publish", publish_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CallbackQueryHandler(on_button))
+    # Handle forwarded channel posts before generic text/photo handlers.
+    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, capture_forwarded_channel))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, gift_paid_photo), group=0)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_match_analysis))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt), group=1)
+    # Record all private user messages after the main handlers have processed them.
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE, track_private_activity), group=2)
+    app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_reactions))
+
+    async def post_init(application):
+        application.bot_data["daily_publisher_task"] = asyncio.create_task(daily_channel_publisher(application))
+        application.bot_data["prediction_updater_task"] = asyncio.create_task(prediction_result_updater(application))
+    app.post_init = post_init
+    log.info("Nogoom Sports bot is starting")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
