@@ -27,7 +27,7 @@ log = logging.getLogger("ngoom-bot")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "6809336258,6834497894").split(",") if x.strip()}
-PAYMENT_NUMBER = os.getenv("PAYMENT_NUMBER", "01024689530")
+PAYMENT_NUMBER = os.getenv("PAYMENT_NUMBER", "01277598981")
 CHANNEL_ID_RAW = os.getenv("CHANNEL_ID", "").strip()
 CHANNEL_ID = int(CHANNEL_ID_RAW) if CHANNEL_ID_RAW else None
 WEEKLY_PRICE = os.getenv("WEEKLY_PRICE", "150")
@@ -1384,7 +1384,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data == "plan:three_days":
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🇪🇬 داخل مصر – 100 جنيه", callback_data="plan:three_days_eg")],
+            [InlineKeyboardButton("🇪🇬 داخل مصر – 80 جنيه", callback_data="plan:three_days_eg")],
             [InlineKeyboardButton("🌍 خارج مصر – 2 USDT", callback_data="plan:three_days_usdt")]
         ])
         await q.message.reply_text(
@@ -1396,19 +1396,19 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan = data.split(":", 1)[1]
         if plan == "weekly_eg":
             amount, label = f"{WEEKLY_PRICE} جنيه", "أسبوعي – داخل مصر"
-            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>"
         elif plan == "weekly_usdt":
             amount, label = "3 USD", "أسبوعي – خارج مصر"
             payment_text = "حوّل 3 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "monthly_eg":
             amount, label = f"{MONTHLY_PRICE} جنيه", "شهري – داخل مصر"
-            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code> أو <code>01277598981</code>"
+            payment_text = f"حوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>"
         elif plan == "monthly_usdt":
             amount, label = "8 USD", "شهري – خارج مصر"
             payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "three_days_eg":
             amount, label = "80 جنيه", "3 أيام – داخل مصر"
-            payment_text = "حوّل 80 جنيه على فودافون كاش: 01277598981"
+            payment_text = f"حوّل 80 جنيه على فودافون كاش: {PAYMENT_NUMBER}"
         elif plan == "three_days_usdt":
             amount, label = "2 USDT", "3 أيام – خارج مصر"
             payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
@@ -1483,7 +1483,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         fee = context.user_data.get("recovery_fee", 500)
         await q.message.reply_text(
-            f"قيمة الخدمة: {fee:,} جنيه.\n\nحوّل المبلغ على فودافون كاش:\n<code>01277598981</code>\n\nوبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            f"قيمة الخدمة: {fee:,} جنيه.\n\nحوّل المبلغ على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>\n\nوبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
             parse_mode="HTML"
         )
     elif data == "capital_manager":
@@ -1598,13 +1598,13 @@ async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending_code:
         context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
         context.user_data["daily_gift_code"] = pending_code
-        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{pending_code}"
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\n{pending_code}"
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
             InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
         ]])
         await message.reply_text(
-            f"وصلت الصورة وكود الهدية ({pending_code}) يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
+            f"وصلت الصورة وكود الهدية ({pending_code}) يا أدمن 👑\nراجعهم واضغط حفظ هدية اليوم.",
             reply_markup=keyboard
         )
         return
@@ -1612,13 +1612,13 @@ async def gift_paid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message.caption and message.caption.strip():
         context.user_data["daily_gift_photo_id"] = message.photo[-1].file_id
         context.user_data["daily_gift_code"] = message.caption.strip()
-        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\\n{message.caption.strip()}"
+        context.user_data["daily_gift_caption"] = f"🎁 كود هديتك اليومية:\n{message.caption.strip()}"
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ حفظ هدية اليوم", callback_data="daily_gift_publish"),
             InlineKeyboardButton("❌ إلغاء", callback_data="daily_gift_cancel")
         ]])
         await message.reply_text(
-            "وصلت صورة كود الهدية والنص يا أدمن 👑\\nراجعهم واضغط حفظ هدية اليوم.",
+            "وصلت صورة كود الهدية والنص يا أدمن 👑\nراجعهم واضغط حفظ هدية اليوم.",
             reply_markup=keyboard
         )
         return
