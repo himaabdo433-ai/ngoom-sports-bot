@@ -115,9 +115,14 @@ async function getNews() {
   newsCache.items = items;
   return items;
 }
-\nhttp.createServer(async (req, res) => {
+
+http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
-  if (url.pathname === "/api/news") {\n    try { return json(res, 200, { items: await getNews(), source: "Google News RSS" }); }\n    catch (error) { return json(res, 502, { error: "تعذر جلب الأخبار حاليًا" }); }\n  }\n  if (url.pathname === "/api/matches") {
+  if (url.pathname === "/api/news") {
+    try { return json(res, 200, { items: await getNews(), source: "Google News RSS" }); }
+    catch (error) { return json(res, 502, { error: "تعذر جلب الأخبار حاليًا" }); }
+  }
+  if (url.pathname === "/api/matches") {
     const date = url.searchParams.get("date") || new Date().toISOString().slice(0,10).replace(/-/g,"");
     if (!/^\d{8}$/.test(date)) return json(res, 400, { error: "صيغة التاريخ غير صحيحة" });
     try {
