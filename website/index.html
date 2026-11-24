@@ -46,13 +46,10 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
 <div class="hero-card"><div class="kicker">عالم الكرة بين إيديك</div><div class="big">NGOOM<br>SPORTS</div><div style="color:#c7b98f">الأخبار • النتائج • التحليلات</div></div>
 </section>
 <section class="section" id="matches">
-<div class="section-head"><div><h2>مباريات اليوم</h2><p>واجهة تجريبية — سيتم ربط النتائج الحقيقية لاحقًا</p></div><span class="kicker">LIVE CENTER</span></div>
-<div class="pills"><span class="pill active">الكل</span><span class="pill">الدوري الإنجليزي</span><span class="pill">الدوري الإسباني</span><span class="pill">دوري أبطال أوروبا</span><span class="pill">الدوري المصري</span></div>
-<div class="matches">
-<article class="match"><div class="league"><span>الدوري الإنجليزي</span><span>مثال تجريبي</span></div><div class="teams"><div class="team"><div class="crest">🔴</div>الفريق الأول</div><div class="score">VS</div><div class="team"><div class="crest">🔵</div>الفريق الثاني</div></div><div class="status">موعد المباراة يضاف عند ربط مصدر البيانات</div></article>
-<article class="match"><div class="league"><span>الدوري الإسباني</span><span>مثال تجريبي</span></div><div class="teams"><div class="team"><div class="crest">⚪</div>الفريق الثالث</div><div class="score">VS</div><div class="team"><div class="crest">🟡</div>الفريق الرابع</div></div><div class="status">موعد المباراة يضاف عند ربط مصدر البيانات</div></article>
-</div>
-<div class="notice">تنبيه: أسماء الفرق والبطاقات هنا للعرض التجريبي فقط وليست مباريات حقيقية أو نتائج مباشرة.</div>
+<div class="section-head"><div><h2>مباريات اليوم</h2><p id="match-date">جاري تحميل المباريات...</p></div><span class="kicker">LIVE CENTER</span></div>
+<div class="pills" id="league-filters"><button class="pill active" data-league="all">كل البطولات</button><button class="pill" data-league="eng.1">الإنجليزي</button><button class="pill" data-league="esp.1">الإسباني</button><button class="pill" data-league="ita.1">الإيطالي</button><button class="pill" data-league="ger.1">الألماني</button><button class="pill" data-league="fra.1">الفرنسي</button><button class="pill" data-league="uefa.champions">أبطال أوروبا</button><button class="pill" data-league="uefa.europa">الدوري الأوروبي</button></div>
+<div class="matches" id="matches-list" aria-live="polite"><div class="match">بنحمّل مباريات اليوم...</div></div>
+<div class="notice" id="matches-note">يتم تحديث البيانات تلقائيًا. مصدر البيانات: ESPN.</div>
 </section>
 <section class="section" id="features"><div class="section-head"><div><h2>كل اللي يهمك كرويًا</h2><p>أقسام المنصة الأساسية</p></div></div>
 <div class="features">
@@ -63,4 +60,60 @@ footer{border-top:1px solid var(--line);padding:25px 0;color:#888;font-size:12px
 <section class="section" id="elite"><div class="pro"><div><div class="kicker">العضوية المميزة</div><h2>ELITE PRO</h2><p>تحليلات ومحتوى حصري وتوقعات للأعضاء — بدون وعود بأرباح مضمونة.</p></div><a class="btn gold" href="https://t.me/ngom2026" target="_blank" rel="noopener">تواصل واشترك</a></div></section>
 </main>
 <footer><div class="wrap foot"><span>© نجوم الرياضة — جميع الحقوق محفوظة</span><span>تصميم أسود وذهبي • نسخة تجريبية أولى</span></div></footer>
+<script>
+(() => {
+  const list = document.getElementById("matches-list");
+  const dateLabel = document.getElementById("match-date");
+  const filters = document.getElementById("league-filters");
+  const note = document.getElementById("matches-note");
+  let allMatches = [];
+  let activeLeague = "all";
+  const today = new Date();
+  const dateKey = today.getFullYear() + String(today.getMonth()+1).padStart(2,"0") + String(today.getDate()).padStart(2,"0");
+  dateLabel.textContent = "مباريات " + today.toLocaleDateString("ar-EG",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  function safe(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function render() {
+    const matches = allMatches.filter(m => activeLeague === "all" || m.leagueCode === activeLeague);
+    if (!matches.length) {
+      list.innerHTML = '<div class="match" style="grid-column:1/-1;text-align:center;color:#aaa">لا توجد مباريات مسجلة في البطولات المختارة اليوم.</div>';
+      return;
+    }
+    list.innerHTML = matches.map(m => {
+      const live = m.state === "in";
+      const finished = m.completed || m.state === "post";
+      const scoreVisible = m.homeScore !== null && m.awayScore !== null;
+      const status = live ? "مباشر " + (m.clock ? "• " + safe(m.clock) : "") : finished ? "انتهت المباراة" : new Date(m.date).toLocaleTimeString("ar-EG",{hour:"2-digit",minute:"2-digit"});
+      const homeLogo = m.homeLogo ? '<img src="' + safe(m.homeLogo) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : "⚽";
+      const awayLogo = m.awayLogo ? '<img src="' + safe(m.awayLogo) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : "⚽";
+      return '<article class="match"><div class="league"><span>' + safe(m.league) + '</span><span class="' + (live ? "status" : "") + '">' + (live ? "● مباشر" : finished ? "النتيجة النهائية" : "قادمة") + '</span></div><div class="teams"><div class="team"><div class="crest">' + homeLogo + '</div>' + safe(m.home) + '</div><div class="score">' + (scoreVisible ? safe(m.homeScore) + " - " + safe(m.awayScore) : "VS") + '</div><div class="team"><div class="crest">' + awayLogo + '</div>' + safe(m.away) + '</div></div><div class="status" style="text-align:center">' + status + '</div></article>';
+    }).join("");
+  }
+  filters.addEventListener("click", event => {
+    const button = event.target.closest("button[data-league]");
+    if (!button) return;
+    activeLeague = button.dataset.league;
+    filters.querySelectorAll(".pill").forEach(el => el.classList.toggle("active", el === button));
+    render();
+  });
+  async function loadMatches() {
+    try {
+      const response = await fetch("/api/matches?date=" + dateKey, {cache:"no-store"});
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data = await response.json();
+      allMatches = data.matches || [];
+      render();
+      note.textContent = "بيانات المباريات من ESPN • يتم التحديث كل دقيقة. قد تختلف تغطية البطولات حسب المصدر.";
+      if (!allMatches.length) note.textContent = "لم يعرض المصدر مباريات لهذه البطولات في هذا التاريخ. جرّب التحديث لاحقًا.";
+    } catch (error) {
+      list.innerHTML = '<div class="match" style="grid-column:1/-1;text-align:center;color:#aaa">تعذر تحميل المباريات الآن. حاول تحديث الصفحة بعد قليل.</div>';
+      note.textContent = "مشكلة مؤقتة في الاتصال بمصدر البيانات.";
+    }
+  }
+  loadMatches();
+  setInterval(loadMatches, 60000);
+})();
+</script>
+<style>
+.crest img{width:36px;height:36px;object-fit:contain}.pill{cursor:pointer;font-family:inherit}
+</style>
 </body></html>
