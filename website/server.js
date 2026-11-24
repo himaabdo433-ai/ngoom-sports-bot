@@ -71,7 +71,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname === "/api/matches") {
     const date = url.searchParams.get("date") || new Date().toISOString().slice(0,10).replace(/-/g,"");
-    if (!/^\\d{8}$/.test(date)) return json(res, 400, { error: "صيغة التاريخ غير صحيحة" });
+    if (!/^\d{8}$/.test(date)) return json(res, 400, { error: "صيغة التاريخ غير صحيحة" });
     try {
       const data = await getMatches(date);
       return json(res, 200, data);
