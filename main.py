@@ -28,6 +28,7 @@ log = logging.getLogger("ngoom-bot")
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "6809336258,6834497894").split(",") if x.strip()}
 PAYMENT_NUMBER = os.getenv("PAYMENT_NUMBER", "01277598981")
+STRATEGY_GROUP_INVITE_URL = os.getenv("STRATEGY_GROUP_INVITE_URL", "https://t.me/+neRoP1byiak4")
 CHANNEL_ID_RAW = os.getenv("CHANNEL_ID", "").strip()
 CHANNEL_ID = int(CHANNEL_ID_RAW) if CHANNEL_ID_RAW else None
 WEEKLY_PRICE = os.getenv("WEEKLY_PRICE", "150")
@@ -1591,18 +1592,25 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if target_user_id:
                             break
         is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
-        group_link = "https://t.me/+neRoP1byiak4MTE0" if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
+        group_link = STRATEGY_GROUP_INVITE_URL if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
         group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
         if not target_user_id:
+            manual_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🚀 دخول جروب الاستراتيجية" if is_strategy else "🚀 دخول جروب النخبة", url=group_link)
+            ]])
             await q.message.reply_text(
-                f"الطلب القديم اتعالج بالفعل، ومش قادر أحدد حساب العضو تلقائيًا.\\n"
-                f"لينك {group_name} لإرساله يدويًا:\\n{group_link}"
+                f"الطلب القديم اتعالج بالفعل، ومش قادر أحدد حساب العضو تلقائيًا.\\nلينك {group_name}:",
+                reply_markup=manual_keyboard
             )
             return
         try:
+            group_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🚀 دخول جروب الاستراتيجية" if is_strategy else "🚀 دخول جروب النخبة", url=group_link)
+            ]])
             await context.bot.send_message(
                 chat_id=target_user_id,
-                text=f"أهلاً بيك ❤️\\nده لينك دخول {group_name}:\\n{group_link}\\n\\nنورتنا 👑"
+                text=f"أهلاً بيك ❤️\\nده لينك دخول {group_name}:\\n\\nنورتنا 👑",
+                reply_markup=group_keyboard
             )
             await q.message.reply_text("✅ تم إرسال لينك الجروب للعضو في الخاص.")
         except Exception:
@@ -1646,7 +1654,17 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     expires_at=excluded.expires_at, updated_at=excluded.updated_at""",
                     (row["user_id"], expires.isoformat(), now.isoformat()))
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
-                await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐")
+                if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt"):
+                    strategy_keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🚀 دخول جروب الاستراتيجية", url=STRATEGY_GROUP_INVITE_URL)
+                    ]])
+                    await context.bot.send_message(
+                        row["user_id"],
+                        "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\n\\nاضغط الزر بالأسفل للانضمام إلى جروب الاستراتيجية:",
+                        reply_markup=strategy_keyboard
+                    )
+                else:
+                    await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐")
                 await q.message.reply_text("تم قبول الدفع وتفعيل الاشتراك.")
             else:
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
