@@ -1446,7 +1446,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             payment_text = "حوّل 8 USD عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
         elif plan == "three_days_eg":
             amount, label = "80 جنيه", "3 أيام – داخل مصر"
-            payment_text = f"حوّل 80 جنيه على فودافون كاش: {PAYMENT_NUMBER}"
+            payment_text = f"حوّل 80 جنيه على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>"
         elif plan == "three_days_usdt":
             amount, label = "2 USDT", "3 أيام – خارج مصر"
             payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
@@ -1454,11 +1454,17 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text("نوع الاشتراك غير معروف. ابدأ من /start.")
             return
         context.user_data["pending_plan"] = plan
+        copy_keyboard = None
+        if plan in ("weekly_eg", "monthly_eg", "three_days_eg"):
+            copy_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 نسخ الرقم", copy_text=CopyTextButton(text=PAYMENT_NUMBER))
+            ]])
         await q.message.reply_text(
             f"اخترت اشتراك {label}.\nقيمة الاشتراك: {amount}.\n\n"
             f"{payment_text}\n"
             "وبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=copy_keyboard
         )
     elif data == "predictions":
         await begin_predictions(q, context)
