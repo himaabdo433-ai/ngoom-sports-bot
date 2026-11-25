@@ -1620,10 +1620,10 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
         group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
         try:
-            group_link = await create_strategy_invite_link(context.bot) if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
+            group_link = await create_strategy_invite_link(context.bot)
         except Exception as exc:
-            log.exception("Could not create strategy invite link")
-            await q.message.reply_text(f"❌ مش قادر أطلع رابط دخول مباشر لجروب الاستراتيجية. {exc}")
+            log.exception("Could not create direct invite link for paid group")
+            await q.message.reply_text(f"❌ مش قادر أطلع رابط دخول مباشر للجروب. تأكد من ربط الجروب وصلاحية البوت. {exc}")
             return
         if not target_user_id:
             manual_keyboard = InlineKeyboardMarkup([[
@@ -1685,25 +1685,33 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     expires_at=excluded.expires_at, updated_at=excluded.updated_at""",
                     (row["user_id"], expires.isoformat(), now.isoformat()))
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
-                if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt"):
+                group_access_plans = (
+                    "weekly", "weekly_eg", "weekly_usdt",
+                    "monthly", "monthly_eg", "monthly_usdt",
+                    "three_days_eg", "three_days_usdt",
+                    "strategy_odd15_eg", "strategy_odd15_usdt"
+                )
+                if row["plan"] in group_access_plans:
+                    is_strategy = row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt")
+                    group_label = "جروب الاستراتيجية" if is_strategy else "جروب نجوم الرياضة النخبة"
                     try:
-                        strategy_link = await create_strategy_invite_link(context.bot)
-                        strategy_keyboard = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🚀 دخول جروب الاستراتيجية", url=strategy_link)
+                        direct_link = await create_strategy_invite_link(context.bot)
+                        group_keyboard = InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🚀 دخول " + group_label, url=direct_link)
                         ]])
                         await context.bot.send_message(
                             row["user_id"],
-                            "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\n\\nاضغط الزر بالأسفل للدخول مباشرة إلى جروب الاستراتيجية:",
-                            reply_markup=strategy_keyboard
+                            "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\n\\nاضغط الزر بالأسفل للدخول مباشرة إلى " + group_label + " من غير انتظار موافقة:",
+                            reply_markup=group_keyboard
                         )
                     except Exception:
-                        log.exception("Could not create/send direct strategy invite for user %s", row["user_id"])
+                        log.exception("Could not create/send direct group invite for user %s", row["user_id"])
                         await context.bot.send_message(
                             row["user_id"],
                             "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\nلكن رابط الدخول المباشر لم يتجهز. تواصل مع الإدارة لإرساله لك."
                         )
                 else:
-                    await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐")
+                    await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل الاشتراك بنجاح ⭐")
                 await q.message.reply_text("تم قبول الدفع وتفعيل الاشتراك.")
             else:
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
