@@ -287,6 +287,7 @@ def home_keyboard(user_id=None):
         [InlineKeyboardButton("💳 الاشتراك الأسبوعي", callback_data="plan:weekly"),
          InlineKeyboardButton("👑 الاشتراك الشهري", callback_data="plan:monthly")],
         [InlineKeyboardButton("⏳ اشتراك 3 أيام – 80 جنيه", callback_data="plan:three_days_eg")],
+        [InlineKeyboardButton("🎯 استراتيجية أود 1.5 – 10 أيام", callback_data="strategy_odd15")],
         [InlineKeyboardButton("📋 حالة اشتراكي", callback_data="status")],
         [InlineKeyboardButton("⚽ أبرز مباريات اليوم", callback_data="matches_today")],
         [InlineKeyboardButton("🔄 برنامج استعادة التوازن", callback_data="recovery_start")],
@@ -1230,6 +1231,33 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data or ""
     track_bot_event(q.from_user, "button", data)
+    if data == "strategy_odd15":
+        await q.message.reply_text(
+            "🎯 استراتيجية أود 1.5\n\nمدة الاشتراك: 10 أيام\nقيمة الاشتراك: 100 جنيه داخل مصر أو 2 USDT خارج مصر.\n\nاضغط موافق لاختيار طريقة الدفع.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ موافق", callback_data="strategy_odd15_confirm")]])
+        )
+        return
+    if data == "strategy_odd15_confirm":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🇪🇬 داخل مصر – 100 جنيه", callback_data="strategy_odd15_eg")],
+            [InlineKeyboardButton("🌍 خارج مصر – 2 USDT", callback_data="strategy_odd15_usdt")]
+        ])
+        await q.message.reply_text("اختار طريقة الدفع المناسبة لاشتراك استراتيجية أود 1.5:", reply_markup=keyboard)
+        return
+    if data in ("strategy_odd15_eg", "strategy_odd15_usdt"):
+        plan = data
+        context.user_data["pending_plan"] = plan
+        if plan == "strategy_odd15_eg":
+            payment_text = f"حوّل 100 جنيه على فودافون كاش:\\n<code>{PAYMENT_NUMBER}</code>"
+            amount = "100 جنيه"
+        else:
+            payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
+            amount = "2 USDT"
+        await q.message.reply_text(
+            f"🎯 استراتيجية أود 1.5 – اشتراك 10 أيام\\nقيمة الاشتراك: {amount}\\n\\n{payment_text}\\n\\nبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML"
+        )
+        return
     if data in ("channel_publish_confirm", "channel_publish_cancel"):
         if q.from_user.id not in ADMIN_IDS:
             await q.message.reply_text("الخاصية دي للإدارة فقط.")
@@ -1549,6 +1577,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     days = 3
                 elif row["plan"] in ("weekly", "weekly_eg", "weekly_usdt"):
                     days = 7
+                elif row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt"):
+                    days = 10
                 elif row["plan"] == "recovery_2m":
                     days = 60
                 else:
@@ -1659,6 +1689,12 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif plan == "three_days_usdt":
         amount = "2 USDT"
         plan_label = "3 أيام – خارج مصر"
+    elif plan == "strategy_odd15_eg":
+        amount = "100 جنيه"
+        plan_label = "استراتيجية أود 1.5 – 10 أيام – داخل مصر"
+    elif plan == "strategy_odd15_usdt":
+        amount = "2 USDT"
+        plan_label = "استراتيجية أود 1.5 – 10 أيام – خارج مصر"
     elif plan in ("recovery_1m", "recovery_2m"):
         months = context.user_data.get("recovery_months", 1 if plan == "recovery_1m" else 2)
         amount = f"{context.user_data.get('recovery_fee', months * 500)} جنيه"
