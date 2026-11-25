@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji, CopyTextButton
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     ContextTypes, filters
@@ -1253,9 +1253,19 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             payment_text = "حوّل 2 USDT عبر Binance Pay إلى رقم الحساب (UID): 1145631480"
             amount = "2 USDT"
+        copy_keyboard = None
+        if plan == "strategy_odd15_eg":
+            copy_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 نسخ الرقم", copy_text=CopyTextButton(text=PAYMENT_NUMBER))
+            ]])
+            payment_text = f"حوّل 100 جنيه على فودافون كاش:\n<code>{PAYMENT_NUMBER}</code>"
         await q.message.reply_text(
-            f"🎯 استراتيجية أود 1.5 – اشتراك 10 أيام\\nقيمة الاشتراك: {amount}\\n\\n{payment_text}\\n\\nبعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
-            parse_mode="HTML"
+            f"🎯 استراتيجية أود 1.5 – اشتراك 10 أيام\n"
+            f"قيمة الاشتراك: {amount}\n\n"
+            f"{payment_text}\n\n"
+            "بعد التحويل ابعت صورة الإيصال هنا في المحادثة.",
+            parse_mode="HTML",
+            reply_markup=copy_keyboard
         )
         return
     if data in ("channel_publish_confirm", "channel_publish_cancel"):
