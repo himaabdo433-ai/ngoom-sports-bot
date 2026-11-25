@@ -1564,14 +1564,20 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         pending_id = int(data.split(":", 1)[1])
         with db() as con:
-            row = con.execute("SELECT user_id FROM pending WHERE id=?", (pending_id,)).fetchone()
+            row = con.execute("SELECT user_id, plan FROM pending WHERE id=?", (pending_id,)).fetchone()
         if not row:
             await q.message.reply_text("طلب الاشتراك غير موجود أو تم التعامل معه بالفعل.")
             return
         try:
+            group_link = (
+                "https://t.me/+neRoP1byiak4MTE0"
+                if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt")
+                else "https://t.me/+ri52W-OfZks4NDE8"
+            )
+            group_name = "جروب استراتيجية أود 1.5" if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt") else "جروب نجوم الرياضة النخبة"
             await context.bot.send_message(
                 chat_id=row["user_id"],
-                text="أهلاً بيك ❤️\nده لينك دخول جروب نجوم الرياضة النخبة:\nhttps://t.me/+ri52W-OfZks4NDE8\n\nنورتنا 👑"
+                text=f"أهلاً بيك ❤️\nده لينك دخول {group_name}:\n{group_link}\n\nنورتنا 👑"
             )
             await q.message.reply_text("✅ تم إرسال لينك الجروب للعضو في الخاص.")
         except Exception:
