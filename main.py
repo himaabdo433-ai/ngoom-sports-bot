@@ -23,6 +23,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO
 )
+# Hide httpx request URLs; Telegram Bot API request URLs contain the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("ngoom-bot")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -1908,13 +1910,17 @@ async def set_strategy_group(update: Update, context: ContextTypes.DEFAULT_TYPE)
     message = update.effective_message
     user = update.effective_user
     chat = update.effective_chat
-    if not user or user.id not in ADMIN_IDS:
-        await message.reply_text("الأمر ده للإدارة فقط.")
-        return
     if not chat or chat.type not in ("group", "supergroup"):
         await message.reply_text("ابعت الأمر /setstrategygroup داخل جروب الاستراتيجية نفسه.")
         return
+    if not user:
+        await message.reply_text("الأمر ده لإدارة الجروب فقط.")
+        return
     try:
+        user_member = await context.bot.get_chat_member(chat.id, user.id)
+        if user_member.status not in ("administrator", "creator"):
+            await message.reply_text("الأمر ده لمشرفي الجروب فقط.")
+            return
         member = await context.bot.get_chat_member(chat.id, context.bot.id)
         if member.status not in ("administrator", "creator") or not getattr(member, "can_invite_users", False):
             await message.reply_text("البوت لازم يكون مشرف ومعاه صلاحية دعوة المستخدمين عبر الروابط.")
