@@ -1775,7 +1775,10 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📩 إرسال لينك الجروب", callback_data=f"send_group_link_user:{user.id}:{plan}")],
         [InlineKeyboardButton("👤 التواصل مع صاحب الطلب", url=(f"https://t.me/{user.username}" if user.username else f"tg://user?id={user.id}"))]
     ])
-    for admin_id in ADMIN_IDS:
+    # Subscription receipt notifications go to the primary admin only.
+    # Keep all ADMIN_IDS unchanged so the second admin retains management permissions.
+    receipt_notification_admin_id = int(os.getenv("RECEIPT_NOTIFICATION_ADMIN_ID", "6809336258"))
+    for admin_id in (receipt_notification_admin_id,):
         try:
             if update.effective_message.photo:
                 await context.bot.send_photo(admin_id, update.effective_message.photo[-1].file_id,
