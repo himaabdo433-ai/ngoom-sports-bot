@@ -1558,30 +1558,55 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 pass
         await q.message.reply_text("مفيش اشتراك نشط حاليًا.", reply_markup=home_keyboard())
-    elif data.startswith("send_group_link:"):
+    elif data.startswith("send_group_link_user:") or data.startswith("send_group_link:"):
         if q.from_user.id not in ADMIN_IDS:
             await q.message.reply_text("الخاصية دي للإدارة فقط.")
             return
-        pending_id = int(data.split(":", 1)[1])
-        with db() as con:
-            row = con.execute("SELECT user_id, plan FROM pending WHERE id=?", (pending_id,)).fetchone()
-        if not row:
-            await q.message.reply_text("طلب الاشتراك غير موجود أو تم التعامل معه بالفعل.")
+        target_user_id = None
+        plan = None
+        if data.startswith("send_group_link_user:"):
+            _, raw_user_id, plan = data.split(":", 2)
+            target_user_id = int(raw_user_id)
+        else:
+            pending_id = int(data.split(":", 1)[1])
+            with db() as con:
+                row = con.execute("SELECT user_id, plan FROM pending WHERE id=?", (pending_id,)).fetchone()
+            if row:
+                target_user_id, plan = row["user_id"], row["plan"]
+            else:
+                # Old admin messages may outlive the pending row after approval/rejection.
+                caption = q.message.caption or q.message.text or ""
+                plan = "strategy_odd15_eg" if "استراتيجية أود 1.5" in caption else "monthly"
+                marker = "tg://user?id="
+                if q.message.reply_markup:
+                    for button_row in q.message.reply_markup.inline_keyboard:
+                        for button in button_row:
+                            url = getattr(button, "url", None) or ""
+                            if marker in url:
+                                try:
+                                    target_user_id = int(url.split(marker, 1)[1].split("&", 1)[0])
+                                except ValueError:
+                                    pass
+                                break
+                        if target_user_id:
+                            break
+        is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
+        group_link = "https://t.me/+neRoP1byiak4MTE0" if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
+        group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
+        if not target_user_id:
+            await q.message.reply_text(
+                f"الطلب القديم اتعالج بالفعل، ومش قادر أحدد حساب العضو تلقائيًا.\\n"
+                f"لينك {group_name} لإرساله يدويًا:\\n{group_link}"
+            )
             return
         try:
-            group_link = (
-                "https://t.me/+neRoP1byiak4MTE0"
-                if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt")
-                else "https://t.me/+ri52W-OfZks4NDE8"
-            )
-            group_name = "جروب استراتيجية أود 1.5" if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt") else "جروب نجوم الرياضة النخبة"
             await context.bot.send_message(
-                chat_id=row["user_id"],
-                text=f"أهلاً بيك ❤️\nده لينك دخول {group_name}:\n{group_link}\n\nنورتنا 👑"
+                chat_id=target_user_id,
+                text=f"أهلاً بيك ❤️\\nده لينك دخول {group_name}:\\n{group_link}\\n\\nنورتنا 👑"
             )
             await q.message.reply_text("✅ تم إرسال لينك الجروب للعضو في الخاص.")
         except Exception:
-            log.exception("Could not send group invite link to user %s", row["user_id"])
+            log.exception("Could not send group invite link to user %s", target_user_id)
             await q.message.reply_text("❌ مقدرتش أبعتله اللينك. غالبًا العضو ما بدأش البوت أو عامل حظر. خليه يفتح البوت ويضغط Start الأول.")
         return
     elif data.startswith("approve:") or data.startswith("reject:"):
@@ -1747,7 +1772,7 @@ async def receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("قبول وتفعيل", callback_data=f"approve:{pending_id}"),
             InlineKeyboardButton("رفض", callback_data=f"reject:{pending_id}")
         ],
-        [InlineKeyboardButton("📩 إرسال لينك الجروب", callback_data=f"send_group_link:{pending_id}")],
+        [InlineKeyboardButton("📩 إرسال لينك الجروب", callback_data=f"send_group_link_user:{user.id}:{plan}")],
         [InlineKeyboardButton("👤 التواصل مع صاحب الطلب", url=(f"https://t.me/{user.username}" if user.username else f"tg://user?id={user.id}"))]
     ])
     for admin_id in ADMIN_IDS:
