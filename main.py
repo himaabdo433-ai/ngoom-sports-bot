@@ -136,6 +136,32 @@ def save_channel_id(chat_id):
             (str(chat_id),)
         )
 
+def save_strategy_group_id(chat_id):
+    with db() as con:
+        con.execute(
+            "INSERT INTO bot_settings(key, value) VALUES('strategy_group_id', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(chat_id),)
+        )
+
+
+def get_strategy_group_id():
+    with db() as con:
+        row = con.execute("SELECT value FROM bot_settings WHERE key='strategy_group_id'").fetchone()
+    return int(row["value"]) if row else None
+
+
+async def create_strategy_invite_link(bot):
+    group_id = get_strategy_group_id()
+    if not group_id:
+        raise RuntimeError("لم يتم ضبط جروب الاستراتيجية بعد. أرسل /setstrategygroup داخل الجروب.")
+    invite = await bot.create_chat_invite_link(
+        chat_id=group_id,
+        creates_join_request=False,
+        name="Nogoom Strategy Direct"
+    )
+    return invite.invite_link
+
 
 async def build_daily_matches_text():
     today = datetime.now(ZoneInfo("Africa/Cairo"))
@@ -1592,8 +1618,13 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if target_user_id:
                             break
         is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
-        group_link = STRATEGY_GROUP_INVITE_URL if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
         group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
+        try:
+            group_link = await create_strategy_invite_link(context.bot) if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
+        except Exception as exc:
+            log.exception("Could not create strategy invite link")
+            await q.message.reply_text(f"❌ مش قادر أطلع رابط دخول مباشر لجروب الاستراتيجية. {exc}")
+            return
         if not target_user_id:
             manual_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🚀 دخول جروب الاستراتيجية" if is_strategy else "🚀 دخول جروب النخبة", url=group_link)
@@ -1655,14 +1686,22 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     (row["user_id"], expires.isoformat(), now.isoformat()))
                 con.execute("DELETE FROM pending WHERE id=?", (pending_id,))
                 if row["plan"] in ("strategy_odd15_eg", "strategy_odd15_usdt"):
-                    strategy_keyboard = InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🚀 دخول جروب الاستراتيجية", url=STRATEGY_GROUP_INVITE_URL)
-                    ]])
-                    await context.bot.send_message(
-                        row["user_id"],
-                        "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\n\\nاضغط الزر بالأسفل للانضمام إلى جروب الاستراتيجية:",
-                        reply_markup=strategy_keyboard
-                    )
+                    try:
+                        strategy_link = await create_strategy_invite_link(context.bot)
+                        strategy_keyboard = InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🚀 دخول جروب الاستراتيجية", url=strategy_link)
+                        ]])
+                        await context.bot.send_message(
+                            row["user_id"],
+                            "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\n\\nاضغط الزر بالأسفل للدخول مباشرة إلى جروب الاستراتيجية:",
+                            reply_markup=strategy_keyboard
+                        )
+                    except Exception:
+                        log.exception("Could not create/send direct strategy invite for user %s", row["user_id"])
+                        await context.bot.send_message(
+                            row["user_id"],
+                            "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐\\nلكن رابط الدخول المباشر لم يتجهز. تواصل مع الإدارة لإرساله لك."
+                        )
                 else:
                     await context.bot.send_message(row["user_id"], "تم تأكيد الدفع وتفعيل اشتراكك بنجاح ⭐")
                 await q.message.reply_text("تم قبول الدفع وتفعيل الاشتراك.")
@@ -1857,6 +1896,31 @@ async def setgift(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "وهعرضهالك للتأكيد قبل الحفظ."
     )
 
+async def set_strategy_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or user.id not in ADMIN_IDS:
+        await message.reply_text("الأمر ده للإدارة فقط.")
+        return
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("ابعت الأمر /setstrategygroup داخل جروب الاستراتيجية نفسه.")
+        return
+    try:
+        member = await context.bot.get_chat_member(chat.id, context.bot.id)
+        if member.status not in ("administrator", "creator") or not getattr(member, "can_invite_users", False):
+            await message.reply_text("البوت لازم يكون مشرف ومعاه صلاحية دعوة المستخدمين عبر الروابط.")
+            return
+        test_link = await context.bot.create_chat_invite_link(
+            chat_id=chat.id, creates_join_request=False, name="Nogoom Strategy Direct"
+        )
+        save_strategy_group_id(chat.id)
+        await message.reply_text("✅ تم ربط جروب الاستراتيجية بنجاح. رابط الدخول المباشر جاهز، ومن غير طلب موافقة.")
+    except Exception:
+        log.exception("Could not configure strategy group from chat %s", chat.id)
+        await message.reply_text("❌ مقدرتش أضبط الجروب. تأكد إن البوت مشرف ومعاه صلاحية دعوة المستخدمين عبر الروابط.")
+
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
@@ -1914,6 +1978,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("setstrategygroup", set_strategy_group))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("setgift", setgift))
     app.add_handler(CommandHandler("publish", publish_command))
