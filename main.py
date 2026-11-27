@@ -1621,8 +1621,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             break
         is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
         group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
-        # Use the fixed shared group link for weekly, monthly and 3-day subscriptions.
-        group_link = "https://t.me/+ri52W-OfZks4NDE8"
+        # Send strategy subscribers to their separate group; regular plans use the main elite group.
+        group_link = "https://t.me/+neRoP1byiak4MTE0" if is_strategy else "https://t.me/+ri52W-OfZks4NDE8"
         if not target_user_id:
             manual_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🚀 دخول جروب الاستراتيجية" if is_strategy else "🚀 دخول جروب النخبة", url=group_link)
