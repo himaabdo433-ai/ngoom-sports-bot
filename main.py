@@ -1621,12 +1621,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             break
         is_strategy = plan in ("strategy_odd15_eg", "strategy_odd15_usdt")
         group_name = "جروب استراتيجية أود 1.5" if is_strategy else "جروب نجوم الرياضة النخبة"
-        try:
-            group_link = await create_strategy_invite_link(context.bot)
-        except Exception as exc:
-            log.exception("Could not create direct invite link for paid group")
-            await q.message.reply_text(f"❌ مش قادر أطلع رابط دخول مباشر للجروب. تأكد من ربط الجروب وصلاحية البوت. {exc}")
-            return
+        # Use the fixed shared group link for weekly, monthly and 3-day subscriptions.
+        group_link = "https://t.me/+ri52W-OfZks4NDE8"
         if not target_user_id:
             manual_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🚀 دخول جروب الاستراتيجية" if is_strategy else "🚀 دخول جروب النخبة", url=group_link)
