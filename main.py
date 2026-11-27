@@ -1260,6 +1260,11 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data or ""
     track_bot_event(q.from_user, "button", data)
+    if data == "admin_stats":
+        if q.from_user.id not in ADMIN_IDS:
+            return
+        await show_bot_stats(q.message)
+        return
     if data == "strategy_odd15":
         await q.message.reply_text(
             "🎯 استراتيجية أود 1.5\n\nمدة الاشتراك: 10 أيام\nقيمة الاشتراك: 100 جنيه داخل مصر أو 2 USDT خارج مصر.\n\nاضغط موافق لاختيار طريقة الدفع.",
@@ -1939,14 +1944,41 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.effective_message.reply_text("الأمر ده للإدارة فقط.")
         return
+    now = datetime.now(timezone.utc)
+    soon = (now + timedelta(hours=24)).isoformat()
     with db() as con:
         pending_count = con.execute("SELECT COUNT(*) n FROM pending").fetchone()["n"]
+        pending_users = con.execute("SELECT COUNT(DISTINCT user_id) n FROM pending").fetchone()["n"]
         active_count = con.execute(
             "SELECT COUNT(*) n FROM users WHERE expires_at > ?",
-            (datetime.now(timezone.utc).isoformat(),)
+            (now.isoformat(),)
         ).fetchone()["n"]
+        expired_count = con.execute(
+            "SELECT COUNT(*) n FROM users WHERE expires_at <= ?",
+            (now.isoformat(),)
+        ).fetchone()["n"]
+        expiring_count = con.execute(
+            "SELECT COUNT(*) n FROM users WHERE expires_at > ? AND expires_at <= ?",
+            (now.isoformat(), soon)
+        ).fetchone()["n"]
+        visitor_count = con.execute("SELECT COUNT(*) n FROM bot_visitors").fetchone()["n"]
+        recent_count = con.execute(
+            "SELECT COUNT(*) n FROM bot_visitors WHERE last_seen >= ?",
+            ((now - timedelta(days=7)).isoformat(),)
+        ).fetchone()["n"]
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📊 تفاصيل الإحصائيات", callback_data="admin_stats")
+    ]])
     await update.effective_message.reply_text(
-        f"لوحة الإدارة ⭐\nطلبات قيد المراجعة: {pending_count}\nاشتراكات نشطة: {active_count}"
+        "👑 لوحة إدارة نجوم الرياضة\n\n"
+        f"👥 إجمالي مستخدمي البوت: {visitor_count}\n"
+        f"🟢 اشتراكات نشطة: {active_count}\n"
+        f"⚠️ تنتهي خلال 24 ساعة: {expiring_count}\n"
+        f"🔴 اشتراكات منتهية: {expired_count}\n"
+        f"⏳ طلبات الدفع المعلقة: {pending_count} طلب من {pending_users} عضو\n"
+        f"📈 نشطون آخر 7 أيام: {recent_count}\n\n"
+        "استخدم زر التفاصيل لمتابعة حركة البوت.",
+        reply_markup=keyboard
     )
 
 
